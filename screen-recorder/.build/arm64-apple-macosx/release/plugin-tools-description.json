@@ -1,0 +1,276 @@
+{
+  "builtTestProducts" : [
+
+  ],
+  "copyCommands" : {
+
+  },
+  "explicitTargetDependencyImportCheckingMode" : {
+    "none" : {
+
+    }
+  },
+  "generatedSourceTargetSet" : [
+
+  ],
+  "pluginDescriptions" : [
+
+  ],
+  "swiftCommands" : {
+    "C.screen-recorder-arm64-apple-macosx-release.module" : {
+      "executable" : "/Library/Developer/CommandLineTools/usr/bin/swiftc",
+      "fileList" : "/Users/chachacha/personal/jingjo/mtt/screen-recorder/.build/arm64-apple-macosx/release/screen_recorder.build/sources",
+      "importPath" : "/Users/chachacha/personal/jingjo/mtt/screen-recorder/.build/arm64-apple-macosx/release/Modules",
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/chachacha/personal/jingjo/mtt/screen-recorder/Sources/Protocol.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/chachacha/personal/jingjo/mtt/screen-recorder/Sources/Recorder.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/chachacha/personal/jingjo/mtt/screen-recorder/Sources/WindowPicker.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/chachacha/personal/jingjo/mtt/screen-recorder/Sources/main.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/chachacha/personal/jingjo/mtt/screen-recorder/.build/arm64-apple-macosx/release/swift-version--1AB21518FC5DEDBE.txt"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/chachacha/personal/jingjo/mtt/screen-recorder/.build/arm64-apple-macosx/release/screen_recorder.build/sources"
+        }
+      ],
+      "isLibrary" : false,
+      "moduleName" : "screen_recorder",
+      "moduleOutputPath" : "/Users/chachacha/personal/jingjo/mtt/screen-recorder/.build/arm64-apple-macosx/release/Modules/screen_recorder.swiftmodule",
+      "objects" : [
+        "/Users/chachacha/personal/jingjo/mtt/screen-recorder/.build/arm64-apple-macosx/release/screen_recorder.build/Protocol.swift.o",
+        "/Users/chachacha/personal/jingjo/mtt/screen-recorder/.build/arm64-apple-macosx/release/screen_recorder.build/Recorder.swift.o",
+        "/Users/chachacha/personal/jingjo/mtt/screen-recorder/.build/arm64-apple-macosx/release/screen_recorder.build/WindowPicker.swift.o",
+        "/Users/chachacha/personal/jingjo/mtt/screen-recorder/.build/arm64-apple-macosx/release/screen_recorder.build/main.swift.o"
+      ],
+      "otherArguments" : [
+        "-target",
+        "arm64-apple-macosx13.0",
+        "-whole-module-optimization",
+        "-num-threads",
+        "10",
+        "-serialize-diagnostics",
+        "-O",
+        "-j10",
+        "-DSWIFT_PACKAGE",
+        "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+        "-module-cache-path",
+        "/Users/chachacha/personal/jingjo/mtt/screen-recorder/.build/arm64-apple-macosx/release/ModuleCache",
+        "-parseable-output",
+        "-Xfrontend",
+        "-entry-point-function-name",
+        "-Xfrontend",
+        "screen_recorder_main",
+        "-swift-version",
+        "5",
+        "-I",
+        "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+        "-L",
+        "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+        "-plugin-path",
+        "/Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing",
+        "-sdk",
+        "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+        "-g",
+        "-Xcc",
+        "-isysroot",
+        "-Xcc",
+        "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+        "-Xcc",
+        "-fPIC",
+        "-Xcc",
+        "-g",
+        "-package-name",
+        "screen_recorder"
+      ],
+      "outputFileMapPath" : "/Users/chachacha/personal/jingjo/mtt/screen-recorder/.build/arm64-apple-macosx/release/screen_recorder.build/output-file-map.json",
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/chachacha/personal/jingjo/mtt/screen-recorder/.build/arm64-apple-macosx/release/screen_recorder.build/Protocol.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/chachacha/personal/jingjo/mtt/screen-recorder/.build/arm64-apple-macosx/release/screen_recorder.build/Recorder.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/chachacha/personal/jingjo/mtt/screen-recorder/.build/arm64-apple-macosx/release/screen_recorder.build/WindowPicker.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/chachacha/personal/jingjo/mtt/screen-recorder/.build/arm64-apple-macosx/release/screen_recorder.build/main.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/chachacha/personal/jingjo/mtt/screen-recorder/.build/arm64-apple-macosx/release/Modules/screen_recorder.swiftmodule"
+        }
+      ],
+      "prepareForIndexing" : false,
+      "sources" : [
+        "/Users/chachacha/personal/jingjo/mtt/screen-recorder/Sources/Protocol.swift",
+        "/Users/chachacha/personal/jingjo/mtt/screen-recorder/Sources/Recorder.swift",
+        "/Users/chachacha/personal/jingjo/mtt/screen-recorder/Sources/WindowPicker.swift",
+        "/Users/chachacha/personal/jingjo/mtt/screen-recorder/Sources/main.swift"
+      ],
+      "tempsPath" : "/Users/chachacha/personal/jingjo/mtt/screen-recorder/.build/arm64-apple-macosx/release/screen_recorder.build",
+      "wholeModuleOptimization" : true
+    }
+  },
+  "swiftFrontendCommands" : {
+
+  },
+  "swiftTargetScanArgs" : {
+    "screen_recorder" : [
+      "/Library/Developer/CommandLineTools/usr/bin/swiftc",
+      "-module-name",
+      "screen_recorder",
+      "-package-name",
+      "screen_recorder",
+      "-c",
+      "/Users/chachacha/personal/jingjo/mtt/screen-recorder/Sources/Protocol.swift",
+      "/Users/chachacha/personal/jingjo/mtt/screen-recorder/Sources/Recorder.swift",
+      "/Users/chachacha/personal/jingjo/mtt/screen-recorder/Sources/WindowPicker.swift",
+      "/Users/chachacha/personal/jingjo/mtt/screen-recorder/Sources/main.swift",
+      "-I",
+      "/Users/chachacha/personal/jingjo/mtt/screen-recorder/.build/arm64-apple-macosx/release/Modules",
+      "-target",
+      "arm64-apple-macosx13.0",
+      "-whole-module-optimization",
+      "-num-threads",
+      "10",
+      "-serialize-diagnostics",
+      "-O",
+      "-j10",
+      "-DSWIFT_PACKAGE",
+      "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+      "-module-cache-path",
+      "/Users/chachacha/personal/jingjo/mtt/screen-recorder/.build/arm64-apple-macosx/release/ModuleCache",
+      "-parseable-output",
+      "-Xfrontend",
+      "-entry-point-function-name",
+      "-Xfrontend",
+      "screen_recorder_main",
+      "-swift-version",
+      "5",
+      "-I",
+      "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+      "-L",
+      "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+      "-plugin-path",
+      "/Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing",
+      "-sdk",
+      "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+      "-g",
+      "-Xcc",
+      "-isysroot",
+      "-Xcc",
+      "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+      "-Xcc",
+      "-fPIC",
+      "-Xcc",
+      "-g",
+      "-package-name",
+      "screen_recorder",
+      "-driver-use-frontend-path",
+      "/Library/Developer/CommandLineTools/usr/bin/swiftc"
+    ]
+  },
+  "targetDependencyMap" : {
+    "screen_recorder" : [
+
+    ]
+  },
+  "testDiscoveryCommands" : {
+
+  },
+  "testEntryPointCommands" : {
+
+  },
+  "traitConfiguration" : {
+    "default" : {
+
+    }
+  },
+  "writeCommands" : {
+    "/Users/chachacha/personal/jingjo/mtt/screen-recorder/.build/arm64-apple-macosx/release/screen-recorder.product/Objects.LinkFileList" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<link-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/chachacha/personal/jingjo/mtt/screen-recorder/.build/arm64-apple-macosx/release/screen_recorder.build/Protocol.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/chachacha/personal/jingjo/mtt/screen-recorder/.build/arm64-apple-macosx/release/screen_recorder.build/Recorder.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/chachacha/personal/jingjo/mtt/screen-recorder/.build/arm64-apple-macosx/release/screen_recorder.build/WindowPicker.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/chachacha/personal/jingjo/mtt/screen-recorder/.build/arm64-apple-macosx/release/screen_recorder.build/main.swift.o"
+        }
+      ],
+      "outputFilePath" : "/Users/chachacha/personal/jingjo/mtt/screen-recorder/.build/arm64-apple-macosx/release/screen-recorder.product/Objects.LinkFileList"
+    },
+    "/Users/chachacha/personal/jingjo/mtt/screen-recorder/.build/arm64-apple-macosx/release/screen_recorder.build/sources" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/chachacha/personal/jingjo/mtt/screen-recorder/Sources/Protocol.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/chachacha/personal/jingjo/mtt/screen-recorder/Sources/Recorder.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/chachacha/personal/jingjo/mtt/screen-recorder/Sources/WindowPicker.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/chachacha/personal/jingjo/mtt/screen-recorder/Sources/main.swift"
+        }
+      ],
+      "outputFilePath" : "/Users/chachacha/personal/jingjo/mtt/screen-recorder/.build/arm64-apple-macosx/release/screen_recorder.build/sources"
+    },
+    "/Users/chachacha/personal/jingjo/mtt/screen-recorder/.build/arm64-apple-macosx/release/swift-version--1AB21518FC5DEDBE.txt" : {
+      "alwaysOutOfDate" : true,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<swift-get-version>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Library/Developer/CommandLineTools/usr/bin/swiftc"
+        }
+      ],
+      "outputFilePath" : "/Users/chachacha/personal/jingjo/mtt/screen-recorder/.build/arm64-apple-macosx/release/swift-version--1AB21518FC5DEDBE.txt"
+    }
+  }
+}

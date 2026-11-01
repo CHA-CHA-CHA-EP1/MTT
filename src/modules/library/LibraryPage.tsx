@@ -1,21 +1,24 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, FileVideo, Plus, Loader2, CheckCircle, XCircle, Clock } from "lucide-react";
+import { ArrowLeft, FileVideo, Plus, Loader2, CheckCircle, XCircle, Clock, Video, Square, Monitor } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useJobStore } from "./jobStore";
 import { useWorkerEvents } from "@/common/hooks/useWorkerEvents";
 import { ThemeToggle } from "@/common/components/ThemeToggle";
-import { formatTimestamp } from "@/lib/utils";
+import { formatTimestamp, formatDuration } from "@/lib/utils";
+import { WindowPickerModal } from "@/modules/recording/WindowPickerModal";
+import { useRecording } from "@/modules/recording/useRecording";
 import type { Job } from "@/lib/tauri";
 
 const WHISPER_MODEL = "mlx-community/whisper-large-v3-turbo";
 
-const statusIcon = {
+const statusIcon: Record<Job["status"], React.ReactNode> = {
   pending: <Clock className="h-4 w-4 text-muted-foreground" />,
   running: <Loader2 className="h-4 w-4 animate-spin text-primary" />,
   done: <CheckCircle className="h-4 w-4 text-green-500" />,
   error: <XCircle className="h-4 w-4 text-destructive" />,
   cancelled: <XCircle className="h-4 w-4 text-muted-foreground" />,
+  recording: <span className="relative flex h-2 w-2"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" /><span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" /></span>,
 };
 
 const statusLabel: Record<Job["status"], string> = {
@@ -24,12 +27,14 @@ const statusLabel: Record<Job["status"], string> = {
   done: "Done",
   error: "Error",
   cancelled: "Cancelled",
+  recording: "Recording...",
 };
 
 export function LibraryPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const { jobs, loading, setActiveProject, create, cancel, remove, updateStatus } = useJobStore();
+  const [showWindowPicker, setShowWindowPicker] = useState(false);
 
   useEffect(() => {
     if (projectId) setActiveProject(projectId);
@@ -40,6 +45,10 @@ export function LibraryPage() {
     onError: ({ id }) => updateStatus(id, "error"),
     onCancelled: ({ id }) => updateStatus(id, "cancelled"),
     onChunk: ({ id }) => updateStatus(id, "running"),
+  });
+
+  const { isRecording, elapsed, start, stop } = useRecording(projectId, () => {
+    if (projectId) setActiveProject(projectId);
   });
 
   const handleAdd = async () => {
@@ -59,6 +68,23 @@ export function LibraryPage() {
           <h1 className="text-sm font-medium">Library</h1>
         </div>
         <div className="flex items-center gap-1">
+          {isRecording ? (
+            <button
+              onClick={stop}
+              className="flex items-center gap-1.5 rounded-lg border border-destructive/50 bg-destructive/10 px-2.5 py-1.5 text-xs font-medium text-destructive transition-colors hover:bg-destructive/20"
+            >
+              <Square className="h-3.5 w-3.5 fill-current" />
+              Stop {formatDuration(elapsed)}
+            </button>
+          ) : (
+            <button
+              onClick={() => setShowWindowPicker(true)}
+              className="flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent"
+            >
+              <Video className="h-3.5 w-3.5" />
+              Record
+            </button>
+          )}
           <button
             onClick={handleAdd}
             className="flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent"
@@ -88,15 +114,17 @@ export function LibraryPage() {
                   key={job.id}
                   className="group flex items-center gap-3 rounded-xl border bg-card px-4 py-3 transition-colors hover:bg-accent"
                 >
-                  <FileVideo className="h-5 w-5 shrink-0 text-muted-foreground" />
+                  {job.recording_window
+                    ? <Monitor className="h-5 w-5 shrink-0 text-muted-foreground" />
+                    : <FileVideo className="h-5 w-5 shrink-0 text-muted-foreground" />}
 
                   <button
                     className="flex flex-1 flex-col items-start gap-0.5 text-left"
                     onClick={() => (job.status === "done" || job.status === "running") && navigate(`/projects/${projectId}/jobs/${job.id}`)}
-                    disabled={job.status === "pending" || job.status === "error" || job.status === "cancelled"}
+                    disabled={job.status === "pending" || job.status === "error" || job.status === "cancelled" || job.status === "recording"}
                   >
                     <span className="text-sm font-medium leading-tight">
-                      {job.file_path.split("/").pop()}
+                      {job.recording_window ?? job.file_path.split("/").pop()}
                     </span>
                     <span className="text-xs text-muted-foreground">{formatTimestamp(job.created_at)}</span>
                   </button>
@@ -106,6 +134,14 @@ export function LibraryPage() {
                       {statusIcon[job.status]}
                       {statusLabel[job.status]}
                     </span>
+                    {job.status === "recording" && (
+                      <button
+                        onClick={stop}
+                        className="rounded px-2 py-0.5 text-xs text-muted-foreground opacity-0 hover:text-destructive group-hover:opacity-100"
+                      >
+                        Stop
+                      </button>
+                    )}
                     {job.status === "running" && (
                       <button
                         onClick={() => cancel(job.id)}
@@ -129,6 +165,16 @@ export function LibraryPage() {
           )}
         </div>
       </main>
+
+      {showWindowPicker && (
+        <WindowPickerModal
+          onSelect={async (win) => {
+            setShowWindowPicker(false);
+            await start(win);
+          }}
+          onClose={() => setShowWindowPicker(false)}
+        />
+      )}
     </div>
   );
 }

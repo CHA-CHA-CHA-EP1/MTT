@@ -34,6 +34,7 @@ pub fn create_job(
         status: "pending".into(),
         whisper_model: whisper_model.clone(),
         created_at,
+        recording_window: None,
     };
 
     {

@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# Swift Package Manager
+screen-recorder/.build/
+screen-recorder/.swiftpm/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
