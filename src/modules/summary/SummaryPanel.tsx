@@ -20,6 +20,17 @@ interface Props {
 
 type View = "config" | "generating" | "result";
 
+const PROMPT_PRESETS = [
+  {
+    label: "General Summary",
+    prompt: "Please summarize this meeting transcript. Include:\n1. Key discussion points\n2. Decisions made\n3. Action items with owners (if mentioned)\n\nBe concise and use the same language as the transcript.",
+  },
+  {
+    label: "Action Items",
+    prompt: "Extract all action items from this meeting transcript. For each item include:\n- Task description\n- Owner (if mentioned)\n- Deadline (if mentioned)\n- Priority (if mentioned)\n\nFormat as a clear checklist. Use the same language as the transcript.",
+  },
+];
+
 export function SummaryPanel({ jobId, onClose }: Props) {
   const [view, setView] = useState<View>("config");
   const [prompt, setPrompt] = useState("");
@@ -103,6 +114,20 @@ export function SummaryPanel({ jobId, onClose }: Props) {
       {/* Config / Generating view */}
       {(view === "config" || view === "generating") && (
         <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
+          {/* Preset buttons */}
+          <div className="flex gap-1">
+            {PROMPT_PRESETS.map((p) => (
+              <button
+                key={p.label}
+                onClick={() => setPrompt(p.prompt)}
+                disabled={view === "generating"}
+                className="flex-1 rounded-lg border px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground disabled:opacity-50"
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+
           <div>
             <label className="mb-1 block text-xs text-muted-foreground">Prompt</label>
             <textarea
