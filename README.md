@@ -34,12 +34,175 @@ Supports **Anthropic**, **OpenAI**, and any **OpenAI-compatible** provider (Lite
 
 ## Architecture
 
+### Overview
+
+```mermaid
+flowchart TD
+    subgraph UI["React UI (TypeScript · Vite · Tailwind v4 · Zustand)"]
+        direction TB
+        PP["ProjectsPage\n+ SettingsModal"]
+        LP["LibraryPage"]
+        TP["TranscriptPage\n(Player · SegmentList · Search)"]
+        SP["SummaryPanel"]
+        CP["CorrectionPanel"]
+        CH["ChatPanel"]
+    end
+
+    subgraph TAURI["Tauri v2 Core (Rust)"]
+        direction TB
+        CMD["Commands\nprojects · jobs · segments\nsettings · summary · correction · chat"]
+        DB[("SQLite WAL\nprojects\njobs + summary\nsegments + FTS5")]
+        STORE[("tauri-plugin-store\nAI config JSON")]
+        WS["Worker Supervisor\n(stdin/stdout IPC)"]
+        EV["Event Emitter\nworker:* · summary:*\nchat:* · correction:*"]
+    end
+
+    subgraph PY["Python Worker (mlx-whisper)"]
+        direction TB
+        MAIN["main.py\nmessage dispatcher"]
+        VAD["Silero VAD\nspeech timestamps"]
+        FF["ffmpeg\naudio extraction\n(mono · 16kHz · f32le)"]
+        WH["mlx_whisper\ntranscribe()"]
+        COR["corrector.py\nAnthropic Haiku\nbatch text correction"]
+    end
+
+    subgraph AI["External AI APIs"]
+        ANT["Anthropic API\n/v1/messages (SSE)"]
+        OAI["OpenAI-compatible API\n/v1/chat/completions (SSE)"]
+    end
+
+    PP -->|invoke| CMD
+    LP -->|invoke| CMD
+    TP -->|invoke| CMD
+    SP -->|invoke| CMD
+    CP -->|invoke| CMD
+    CH -->|invoke| CMD
+
+    CMD <-->|read/write| DB
+    CMD <-->|read/write| STORE
+    CMD --> WS
+    CMD -->|HTTP reqwest streaming| AI
+    EV -->|listen events| UI
+
+    WS -->|stdin JSON| MAIN
+    MAIN -->|stdout JSON| WS
+    WS --> EV
+
+    MAIN --> FF
+    FF -->|numpy f32 array| VAD
+    VAD -->|speech chunks| WH
+    WH -->|segments| COR
+    COR -->|ANTHROPIC_API_KEY| ANT
 ```
-React + TypeScript (Vite, Tailwind v4, Zustand)
-    ↕ Tauri v2 commands + events
-Rust core (SQLite WAL+FTS5, job queue, worker supervision)
-    ↕ stdio JSON protocol
-Python worker (VAD + mlx-whisper)
+
+### Transcription Data Flow
+
+```mermaid
+sequenceDiagram
+    participant R as React UI
+    participant T as Tauri (Rust)
+    participant P as Python Worker
+    participant A as Anthropic API
+
+    R->>T: invoke("create_job", {filePath})
+    T->>T: INSERT job (status=pending)
+    T->>P: stdin: TranscribeFile {id, file}
+
+    P->>P: ffmpeg → numpy audio
+    P->>P: Silero VAD → speech chunks
+    P-->>T: stdout: Total {count}
+
+    loop each chunk
+        P->>P: mlx_whisper.transcribe()
+        P-->>T: stdout: Chunk {index, segments[]}
+        T->>T: INSERT segments to DB
+        T-->>R: event: worker:chunk
+    end
+
+    loop every 15 segments
+        P->>A: POST /v1/messages (Haiku)
+        A-->>P: corrected JSON array
+        P-->>T: stdout: Correction {start_idx, texts[]}
+        T->>T: UPDATE segments.corrected_text
+        T-->>R: event: worker:correction
+    end
+
+    P-->>T: stdout: Done
+    T->>T: UPDATE job status=done
+    T-->>R: event: worker:done
+```
+
+### AI Features Data Flow
+
+```mermaid
+sequenceDiagram
+    participant R as React UI
+    participant T as Tauri (Rust)
+    participant A as AI API (Anthropic/OpenAI)
+
+    note over R,A: Summary & Chat — streaming SSE
+
+    R->>T: invoke("generate_summary" | "chat_with_transcript")
+    T->>T: load transcript from DB (corrected_text or text)
+    T->>A: POST /v1/messages or /v1/chat/completions\n{stream: true, system: transcript context}
+    loop SSE stream
+        A-->>T: data: {delta.text / choices[0].delta.content}
+        T-->>R: event: summary:chunk / chat:chunk
+        R->>R: accumulate + render Markdown
+    end
+    A-->>T: [DONE]
+    T-->>R: event: summary:done / chat:done
+    T->>T: persist summary to jobs.summary (summary only)
+
+    note over R,A: Correction — batch non-streaming
+
+    R->>T: invoke("correct_transcript")
+    T->>T: load all segments, split into batches of 20
+    loop each batch
+        T->>A: POST /v1/messages\n[{"id": N, "text": "..."}]
+        A-->>T: {"corrections": [{"id": N, "corrected": "..."}]}
+        T->>T: UPDATE segments.corrected_text WHERE id=N
+        T-->>R: event: correction:progress {current, total}
+    end
+    T-->>R: event: correction:done {corrected_count}
+```
+
+### SQLite Schema
+
+```mermaid
+erDiagram
+    projects {
+        TEXT id PK
+        TEXT name
+        INTEGER created_at
+    }
+    jobs {
+        TEXT id PK
+        TEXT project_id FK
+        TEXT file_path
+        TEXT status
+        TEXT whisper_model
+        TEXT summary
+        INTEGER created_at
+    }
+    segments {
+        INTEGER id PK
+        TEXT job_id FK
+        INTEGER idx
+        REAL start
+        REAL end
+        TEXT text
+        TEXT corrected_text
+        INTEGER suspect
+    }
+    segments_fts {
+        TEXT text
+        TEXT corrected_text
+    }
+
+    projects ||--o{ jobs : "has"
+    jobs ||--o{ segments : "has"
+    segments ||--|| segments_fts : "synced via triggers"
 ```
 
 ## Setup
