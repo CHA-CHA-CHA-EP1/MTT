@@ -121,3 +121,9 @@ export const generateSummary = (jobId: string, prompt: string, model: string) =>
 // Correction
 export const correctTranscript = (jobId: string, model: string, instruction: string) =>
   invoke<void>("correct_transcript", { jobId, model, instruction });
+
+// Chat
+export interface ChatMessage { role: "user" | "assistant"; content: string; }
+
+export const chatWithTranscript = (jobId: string, model: string, messages: ChatMessage[]) =>
+  invoke<void>("chat_with_transcript", { jobId, model, messages });

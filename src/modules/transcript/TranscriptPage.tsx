@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Loader2, PanelRightClose, PanelRightOpen, Captions, CaptionsOff, Pencil, ScrollText, Copy, Check, Sparkles, Wand2 } from "lucide-react";
+import { ArrowLeft, Loader2, PanelRightClose, PanelRightOpen, Captions, CaptionsOff, Pencil, ScrollText, Copy, Check, Sparkles, Wand2, MessageSquare } from "lucide-react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useTranscriptStore } from "./transcriptStore";
 import { useWorkerEvents } from "@/common/hooks/useWorkerEvents";
@@ -10,6 +10,7 @@ import { cn, formatDuration } from "@/lib/utils";
 import { getJob, getAiConfig, updateSegment } from "@/lib/tauri";
 import { SummaryPanel } from "@/modules/summary/SummaryPanel";
 import { CorrectionPanel } from "@/modules/correction/CorrectionPanel";
+import { ChatPanel } from "@/modules/chat/ChatPanel";
 
 const MIN_PCT = 20;
 const MAX_PCT = 80;
@@ -44,6 +45,7 @@ export function TranscriptPage() {
   const [copied, setCopied] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [correctionOpen, setCorrectionOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   const [hasAiConfig, setHasAiConfig] = useState(false);
 
   useEffect(() => {
@@ -192,7 +194,7 @@ export function TranscriptPage() {
           </div>
 
           <button
-            onClick={() => { setSummaryOpen((v) => !v); setCorrectionOpen(false); }}
+            onClick={() => { setSummaryOpen((v) => !v); setCorrectionOpen(false); setChatOpen(false); }}
             disabled={!hasAiConfig}
             title={hasAiConfig ? "AI Summary" : "Set up AI in Settings first"}
             className={cn(
@@ -205,7 +207,20 @@ export function TranscriptPage() {
           </button>
 
           <button
-            onClick={() => { setCorrectionOpen((v) => !v); setSummaryOpen(false); }}
+            onClick={() => { setChatOpen((v) => !v); setSummaryOpen(false); setCorrectionOpen(false); }}
+            disabled={!hasAiConfig}
+            title={hasAiConfig ? "Chat with transcript" : "Set up AI in Settings first"}
+            className={cn(
+              "rounded p-1.5 transition-colors",
+              chatOpen ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+              !hasAiConfig && "opacity-30 cursor-not-allowed"
+            )}
+          >
+            <MessageSquare className="h-4 w-4" />
+          </button>
+
+          <button
+            onClick={() => { setCorrectionOpen((v) => !v); setSummaryOpen(false); setChatOpen(false); }}
             disabled={!hasAiConfig}
             title={hasAiConfig ? "AI Correction" : "Set up AI in Settings first"}
             className={cn(
@@ -375,6 +390,11 @@ export function TranscriptPage() {
         {/* Summary panel */}
         {summaryOpen && jobId && (
           <SummaryPanel jobId={jobId} onClose={() => setSummaryOpen(false)} />
+        )}
+
+        {/* Chat panel */}
+        {chatOpen && jobId && (
+          <ChatPanel jobId={jobId} onClose={() => setChatOpen(false)} />
         )}
 
         {/* Correction panel */}

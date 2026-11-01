@@ -1,3 +1,4 @@
+pub mod chat;
 pub mod correction;
 pub mod jobs;
 pub mod projects;
