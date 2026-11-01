@@ -17,6 +17,12 @@ pub fn search_segments(state: State<AppState>, query: String) -> Result<Vec<Segm
 }
 
 #[tauri::command]
+pub fn search_segments_in_job(state: State<AppState>, job_id: String, query: String) -> Result<Vec<Segment>, AppError> {
+    let db = state.db.lock().unwrap();
+    Ok(queries::search_segments_in_job(&db.conn, &job_id, &query)?)
+}
+
+#[tauri::command]
 pub fn update_segment(state: State<AppState>, segment_id: i64, text: Option<String>) -> Result<(), AppError> {
     let db = state.db.lock().unwrap();
     Ok(queries::set_segment_text(&db.conn, segment_id, text)?)

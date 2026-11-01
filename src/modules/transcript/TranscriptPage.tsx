@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Loader2, PanelRightClose, PanelRightOpen, Captions, CaptionsOff, Pencil, ScrollText, Copy, Check, Sparkles, Wand2, MessageSquare } from "lucide-react";
+import { ArrowLeft, Loader2, PanelRightClose, PanelRightOpen, Captions, CaptionsOff, Pencil, ScrollText, Copy, Check, Sparkles, Wand2, MessageSquare, Search, X } from "lucide-react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useTranscriptStore } from "./transcriptStore";
 import { useWorkerEvents } from "@/common/hooks/useWorkerEvents";
 import { ThemeToggle } from "@/common/components/ThemeToggle";
 import { Player } from "./Player";
 import { cn, formatDuration } from "@/lib/utils";
-import { getJob, getAiConfig, updateSegment } from "@/lib/tauri";
+import { getJob, getAiConfig, updateSegment, searchSegmentsInJob, Segment } from "@/lib/tauri";
 import { SummaryPanel } from "@/modules/summary/SummaryPanel";
 import { CorrectionPanel } from "@/modules/correction/CorrectionPanel";
 import { ChatPanel } from "@/modules/chat/ChatPanel";
@@ -43,6 +43,9 @@ export function TranscriptPage() {
   const [editText, setEditText] = useState("");
   const [fullView, setFullView] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<Segment[]>([]);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [correctionOpen, setCorrectionOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
@@ -82,6 +85,14 @@ export function TranscriptPage() {
   };
 
   const cancelEdit = () => setEditingSegId(null);
+
+  useEffect(() => {
+    if (!searchQuery.trim() || !jobId) { setSearchResults([]); return; }
+    const t = setTimeout(() => {
+      searchSegmentsInJob(jobId, searchQuery.trim()).then(setSearchResults).catch(() => {});
+    }, 300);
+    return () => clearTimeout(t);
+  }, [searchQuery, jobId]);
 
   const fullText = segments
     .map((s) => s.corrected_text ?? s.text)
@@ -148,15 +159,16 @@ export function TranscriptPage() {
               }}
               title={ccEnabled ? "CC settings" : "Enable CC"}
               className={cn(
-                "rounded p-1.5 transition-colors",
+                "flex items-center gap-1 rounded px-2 py-1.5 text-xs transition-colors",
                 ccEnabled
                   ? "text-foreground hover:bg-accent"
                   : "text-muted-foreground hover:text-foreground"
               )}
             >
               {ccEnabled
-                ? <Captions className="h-4 w-4" />
-                : <CaptionsOff className="h-4 w-4" />}
+                ? <Captions className="h-3.5 w-3.5" />
+                : <CaptionsOff className="h-3.5 w-3.5" />}
+              <span>CC</span>
             </button>
 
             {ccMenuOpen && (
@@ -198,12 +210,13 @@ export function TranscriptPage() {
             disabled={!hasAiConfig}
             title={hasAiConfig ? "AI Summary" : "Set up AI in Settings first"}
             className={cn(
-              "rounded p-1.5 transition-colors",
+              "flex items-center gap-1 rounded px-2 py-1.5 text-xs transition-colors",
               summaryOpen ? "text-foreground" : "text-muted-foreground hover:text-foreground",
               !hasAiConfig && "opacity-30 cursor-not-allowed"
             )}
           >
-            <Sparkles className="h-4 w-4" />
+            <Sparkles className="h-3.5 w-3.5" />
+            <span>Summarize</span>
           </button>
 
           <button
@@ -211,25 +224,13 @@ export function TranscriptPage() {
             disabled={!hasAiConfig}
             title={hasAiConfig ? "Chat with transcript" : "Set up AI in Settings first"}
             className={cn(
-              "rounded p-1.5 transition-colors",
+              "flex items-center gap-1 rounded px-2 py-1.5 text-xs transition-colors",
               chatOpen ? "text-foreground" : "text-muted-foreground hover:text-foreground",
               !hasAiConfig && "opacity-30 cursor-not-allowed"
             )}
           >
-            <MessageSquare className="h-4 w-4" />
-          </button>
-
-          <button
-            onClick={() => { setCorrectionOpen((v) => !v); setSummaryOpen(false); setChatOpen(false); }}
-            disabled={!hasAiConfig}
-            title={hasAiConfig ? "AI Correction" : "Set up AI in Settings first"}
-            className={cn(
-              "rounded p-1.5 transition-colors",
-              correctionOpen ? "text-foreground" : "text-muted-foreground hover:text-foreground",
-              !hasAiConfig && "opacity-30 cursor-not-allowed"
-            )}
-          >
-            <Wand2 className="h-4 w-4" />
+            <MessageSquare className="h-3.5 w-3.5" />
+            <span>Chat</span>
           </button>
 
           <button
@@ -291,6 +292,26 @@ export function TranscriptPage() {
                   </button>
                 )}
                 <button
+                  onClick={() => { setCorrectionOpen((v) => !v); setSummaryOpen(false); setChatOpen(false); }}
+                  disabled={!hasAiConfig}
+                  title={hasAiConfig ? "AI Correction" : "Set up AI in Settings first"}
+                  className={cn(
+                    "flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors",
+                    correctionOpen ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+                    !hasAiConfig && "opacity-30 cursor-not-allowed"
+                  )}
+                >
+                  <Wand2 className="h-3.5 w-3.5" />
+                  <span>Improve text</span>
+                </button>
+                <button
+                  onClick={() => { setSearchOpen((v) => !v); setSearchQuery(""); setSearchResults([]); }}
+                  title="Search transcript"
+                  className={cn("rounded p-1 transition-colors", searchOpen ? "text-foreground" : "text-muted-foreground hover:text-foreground")}
+                >
+                  <Search className="h-3.5 w-3.5" />
+                </button>
+                <button
                   onClick={() => setFullView((v) => !v)}
                   title={fullView ? "Show segments" : "View full transcript"}
                   className={cn("rounded p-1 transition-colors", fullView ? "text-foreground" : "text-muted-foreground hover:text-foreground")}
@@ -300,6 +321,33 @@ export function TranscriptPage() {
               </div>
             </div>
 
+            {/* Search bar */}
+            {searchOpen && (
+              <div className="border-b px-3 py-2">
+                <div className="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-1.5">
+                  <Search className="h-3 w-3 shrink-0 text-muted-foreground" />
+                  <input
+                    autoFocus
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search segments..."
+                    className="flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
+                  />
+                  {searchQuery && (
+                    <button onClick={() => { setSearchQuery(""); setSearchResults([]); }} className="text-muted-foreground hover:text-foreground">
+                      <X className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+                {searchQuery && (
+                  <p className="mt-1.5 text-[10px] text-muted-foreground">
+                    {searchResults.length} result{searchResults.length !== 1 ? "s" : ""}
+                  </p>
+                )}
+              </div>
+            )}
+
             {loading ? (
               <div className="flex flex-1 items-center justify-center">
                 <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -308,6 +356,21 @@ export function TranscriptPage() {
               <div className="flex-1 overflow-y-auto px-5 py-4 select-text">
                 <p className="text-sm leading-relaxed whitespace-pre-wrap">{fullText}</p>
               </div>
+            ) : searchOpen && searchQuery ? (
+              <ul className="flex-1 overflow-y-auto p-3 space-y-0.5">
+                {searchResults.length === 0 ? (
+                  <li className="flex h-20 items-center justify-center text-xs text-muted-foreground">No results</li>
+                ) : searchResults.map((seg) => (
+                  <li
+                    key={seg.id}
+                    onClick={() => seekRef.current(seg.start)}
+                    className="flex cursor-pointer gap-3 rounded-lg px-3 py-2 transition-colors hover:bg-accent"
+                  >
+                    <span className="mt-0.5 shrink-0 text-xs tabular-nums text-muted-foreground">{formatDuration(seg.start)}</span>
+                    <span className="text-xs leading-relaxed">{seg.corrected_text ?? seg.text}</span>
+                  </li>
+                ))}
+              </ul>
             ) : (
               <ul className="flex-1 overflow-y-auto p-3 space-y-0.5">
                 {segments.map((seg, i) => {

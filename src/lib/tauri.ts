@@ -68,6 +68,9 @@ export const getSegments = (jobId: string) =>
 export const searchSegments = (query: string) =>
   invoke<Segment[]>("search_segments", { query });
 
+export const searchSegmentsInJob = (jobId: string, query: string) =>
+  invoke<Segment[]>("search_segments_in_job", { jobId, query });
+
 export const updateSegment = (segmentId: number, text: string | null) =>
   invoke<void>("update_segment", { segmentId, text });
 

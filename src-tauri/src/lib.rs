@@ -63,6 +63,7 @@ pub fn run() {
             commands::jobs::get_job,
             commands::segments::get_segments,
             commands::segments::search_segments,
+            commands::segments::search_segments_in_job,
             commands::segments::update_segment,
             commands::settings::get_ai_config,
             commands::settings::save_ai_config,

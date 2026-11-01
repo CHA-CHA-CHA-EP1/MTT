@@ -213,6 +213,29 @@ pub fn get_segments(conn: &Connection, job_id: &str) -> Result<Vec<Segment>> {
     rows.collect()
 }
 
+pub fn search_segments_in_job(conn: &Connection, job_id: &str, query: &str) -> Result<Vec<Segment>> {
+    let mut stmt = conn.prepare(
+        "SELECT s.id, s.job_id, s.idx, s.start, s.end, s.text, s.corrected_text, s.suspect
+         FROM segments s
+         JOIN segments_fts fts ON fts.rowid = s.id
+         WHERE segments_fts MATCH ?1 AND s.job_id = ?2
+         ORDER BY s.idx",
+    )?;
+    let rows = stmt.query_map(params![query, job_id], |row| {
+        Ok(Segment {
+            id: row.get(0)?,
+            job_id: row.get(1)?,
+            idx: row.get(2)?,
+            start: row.get(3)?,
+            end: row.get(4)?,
+            text: row.get(5)?,
+            corrected_text: row.get(6)?,
+            suspect: row.get::<_, i32>(7)? != 0,
+        })
+    })?;
+    rows.collect()
+}
+
 pub fn search_segments(conn: &Connection, query: &str) -> Result<Vec<Segment>> {
     let mut stmt = conn.prepare(
         "SELECT s.id, s.job_id, s.idx, s.start, s.end, s.text, s.corrected_text, s.suspect
