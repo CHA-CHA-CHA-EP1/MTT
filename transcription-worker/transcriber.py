@@ -27,6 +27,39 @@ MAX_CHUNK = 28 * SR
 BATCH_SIZE = 15
 OVERLAP = 3
 GLOSSARY = "Rust, Graydon Hoare, Mozilla, Ownership, Garbage Collector, Memory Bug, Crash, Microsoft, Amazon, Google"
+PAUSE_SPLIT = 0.6  # split segment only at genuine speech pauses
+
+
+def _split_long(seg: dict, suspect: bool, offset: float) -> list[Segment]:
+    words = seg.get("words", [])
+    if not words:
+        text = seg["text"].strip()
+        return [Segment(start=round(offset + seg["start"], 2), end=round(offset + seg["end"], 2), text=text, suspect=suspect)] if text else []
+
+    result: list[Segment] = []
+    group: list[dict] = []
+
+    def flush():
+        if not group:
+            return
+        # Join raw — Whisper prefixes English words with space, Thai syllables have none.
+        text = "".join(w["word"] for w in group).strip()
+        if text:
+            result.append(Segment(
+                start=round(offset + group[0]["start"], 2),
+                end=round(offset + group[-1]["end"], 2),
+                text=text,
+                suspect=suspect,
+            ))
+
+    for w in words:
+        if group and (w["start"] - group[-1]["end"]) >= PAUSE_SPLIT:
+            flush()
+            group = []
+        group.append(w)
+
+    flush()
+    return result
 
 
 def _ratio(text: str) -> float:
@@ -93,6 +126,7 @@ def transcribe_file(
                 language="th",
                 initial_prompt=prompt,
                 condition_on_previous_text=False,
+                word_timestamps=True,
             )
             text = r["text"].strip()
             suspect = _ratio(text) > 2.4 or not text
@@ -105,19 +139,16 @@ def transcribe_file(
                     initial_prompt=GLOSSARY,
                     condition_on_previous_text=False,
                     temperature=(0.2, 0.4, 0.6),
+                    word_timestamps=True,
                 )
                 text = r["text"].strip()
                 suspect = _ratio(text) > 2.4 or not text
 
             offset = a / SR
             new_segs = [
-                Segment(
-                    start=round(offset + s["start"], 2),
-                    end=round(offset + s["end"], 2),
-                    text=s["text"].strip(),
-                    suspect=suspect,
-                )
+                split
                 for s in r["segments"]
+                for split in _split_long(s, suspect, offset)
             ]
 
             if not suspect:
