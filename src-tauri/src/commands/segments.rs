@@ -15,3 +15,9 @@ pub fn search_segments(state: State<AppState>, query: String) -> Result<Vec<Segm
     let db = state.db.lock().unwrap();
     Ok(queries::search_segments(&db.conn, &query)?)
 }
+
+#[tauri::command]
+pub fn update_segment(state: State<AppState>, segment_id: i64, text: Option<String>) -> Result<(), AppError> {
+    let db = state.db.lock().unwrap();
+    Ok(queries::set_segment_text(&db.conn, segment_id, text)?)
+}

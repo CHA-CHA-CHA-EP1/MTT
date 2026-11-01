@@ -17,6 +17,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_store::Builder::default().build())
         .setup(|app| {
             let app_handle = app.handle().clone();
 
@@ -62,6 +63,16 @@ pub fn run() {
             commands::jobs::get_job,
             commands::segments::get_segments,
             commands::segments::search_segments,
+            commands::segments::update_segment,
+            commands::settings::get_ai_config,
+            commands::settings::save_ai_config,
+            commands::settings::get_summary_config,
+            commands::settings::save_summary_config,
+            commands::settings::list_ai_models,
+            commands::settings::test_ai_connection,
+            commands::summary::get_job_summary,
+            commands::summary::generate_summary,
+            commands::correction::correct_transcript,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

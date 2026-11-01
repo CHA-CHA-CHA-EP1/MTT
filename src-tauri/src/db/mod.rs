@@ -20,6 +20,8 @@ impl Db {
     pub fn new(path: &str) -> Result<Self, DbError> {
         let conn = Connection::open(path)?;
         conn.execute_batch(schema::CREATE_TABLES)?;
+        // migrations — ignore errors if column already exists
+        conn.execute("ALTER TABLE jobs ADD COLUMN summary TEXT", []).ok();
         Ok(Self { conn })
     }
 }

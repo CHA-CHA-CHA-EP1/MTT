@@ -140,6 +140,29 @@ pub fn delete_job(conn: &Connection, id: &str) -> Result<()> {
     Ok(())
 }
 
+pub fn get_job_summary(conn: &Connection, job_id: &str) -> Result<Option<String>> {
+    let mut stmt = conn.prepare("SELECT summary FROM jobs WHERE id = ?1")?;
+    let mut rows = stmt.query(params![job_id])?;
+    if let Some(row) = rows.next()? {
+        Ok(row.get(0)?)
+    } else {
+        Ok(None)
+    }
+}
+
+pub fn set_job_summary(conn: &Connection, job_id: &str, summary: &str) -> Result<()> {
+    conn.execute("UPDATE jobs SET summary = ?1 WHERE id = ?2", params![summary, job_id])?;
+    Ok(())
+}
+
+pub fn get_segments_text(conn: &Connection, job_id: &str) -> Result<String> {
+    let mut stmt = conn.prepare(
+        "SELECT COALESCE(corrected_text, text) FROM segments WHERE job_id = ?1 ORDER BY idx",
+    )?;
+    let texts: Result<Vec<String>> = stmt.query_map(params![job_id], |r| r.get(0))?.collect();
+    Ok(texts?.join(" "))
+}
+
 // --- Segment queries ---
 
 pub fn insert_segment(conn: &Connection, seg: &Segment) -> Result<()> {
@@ -147,6 +170,14 @@ pub fn insert_segment(conn: &Connection, seg: &Segment) -> Result<()> {
         "INSERT INTO segments (job_id, idx, start, end, text, corrected_text, suspect)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         params![seg.job_id, seg.idx, seg.start, seg.end, seg.text, seg.corrected_text, seg.suspect as i32],
+    )?;
+    Ok(())
+}
+
+pub fn set_segment_text(conn: &Connection, segment_id: i64, text: Option<String>) -> Result<()> {
+    conn.execute(
+        "UPDATE segments SET corrected_text = ?1 WHERE id = ?2",
+        params![text, segment_id],
     )?;
     Ok(())
 }

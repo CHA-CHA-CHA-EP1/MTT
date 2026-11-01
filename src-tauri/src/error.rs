@@ -10,6 +10,8 @@ pub enum AppError {
     Worker(String),
     #[error("not found")]
     NotFound,
+    #[error("{0}")]
+    Other(String),
 }
 
 impl From<rusqlite::Error> for AppError {

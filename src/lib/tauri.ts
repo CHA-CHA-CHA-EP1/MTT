@@ -67,3 +67,57 @@ export const getSegments = (jobId: string) =>
 
 export const searchSegments = (query: string) =>
   invoke<Segment[]>("search_segments", { query });
+
+export const updateSegment = (segmentId: number, text: string | null) =>
+  invoke<void>("update_segment", { segmentId, text });
+
+// AI Config
+export type AiProvider = "anthropic" | "openai" | "custom";
+
+export interface AiConfig {
+  provider: AiProvider;
+  api_key: string;
+  base_url?: string;
+  model: string;
+}
+
+export const PROVIDER_DEFAULTS: Record<AiProvider, { label: string; base_url?: string; model: string }> = {
+  anthropic: { label: "Anthropic (Claude)", model: "claude-sonnet-4-6" },
+  openai: { label: "OpenAI", model: "gpt-4o" },
+  custom: { label: "Custom / LiteLLM", model: "" },
+};
+
+export const getAiConfig = () =>
+  invoke<AiConfig | null>("get_ai_config");
+
+export const saveAiConfig = (config: AiConfig) =>
+  invoke<void>("save_ai_config", { config });
+
+export const listAiModels = (config: AiConfig) =>
+  invoke<string[]>("list_ai_models", { config });
+
+export const testAiConnection = (config: AiConfig) =>
+  invoke<void>("test_ai_connection", { config });
+
+// Summary config
+export interface SummaryConfig {
+  prompt: string;
+  model: string;
+}
+
+export const getSummaryConfig = () =>
+  invoke<SummaryConfig>("get_summary_config");
+
+export const saveSummaryConfig = (config: SummaryConfig) =>
+  invoke<void>("save_summary_config", { config });
+
+// Summary
+export const getJobSummary = (jobId: string) =>
+  invoke<string | null>("get_job_summary", { jobId });
+
+export const generateSummary = (jobId: string, prompt: string, model: string) =>
+  invoke<void>("generate_summary", { jobId, prompt, model });
+
+// Correction
+export const correctTranscript = (jobId: string, model: string, instruction: string) =>
+  invoke<void>("correct_transcript", { jobId, model, instruction });
