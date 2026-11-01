@@ -82,7 +82,8 @@ export function Player({ src, onTimeUpdate, onSeek }: PlayerProps) {
   // keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement).tagName === "INPUT") return;
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement).isContentEditable) return;
       if (e.code === "Space") { e.preventDefault(); togglePlay(); }
       if (e.code === "ArrowLeft") skip(-5);
       if (e.code === "ArrowRight") skip(5);
