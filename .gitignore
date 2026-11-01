@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+
+# Test videos
+transcription-worker/tests/videos/*
+!transcription-worker/tests/videos/.gitkeep
+
+# macOS
+.DS_Store
