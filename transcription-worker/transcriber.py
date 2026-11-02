@@ -112,7 +112,7 @@ def transcribe_file(
                 condition_on_previous_text=False,
             )
             text = r["text"].strip()
-            suspect = _ratio(text) > 2.4 or not text
+            suspect = _ratio(text) > 2.8 or not text
 
             if suspect:
                 r = mlx_whisper.transcribe(
@@ -124,7 +124,7 @@ def transcribe_file(
                     temperature=(0.2, 0.4, 0.6),
                 )
                 text = r["text"].strip()
-                suspect = _ratio(text) > 2.4 or not text
+                suspect = _ratio(text) > 2.8 or not text
 
             offset = a / SR
             new_segs = [

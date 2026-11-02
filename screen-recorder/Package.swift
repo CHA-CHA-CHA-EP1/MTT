@@ -8,6 +8,9 @@ let package = Package(
         .executableTarget(
             name: "screen-recorder",
             path: "Sources",
+            swiftSettings: [
+                .swiftLanguageMode(.v5)
+            ],
             linkerSettings: [
                 .unsafeFlags([
                     "-Xlinker", "-sectcreate",

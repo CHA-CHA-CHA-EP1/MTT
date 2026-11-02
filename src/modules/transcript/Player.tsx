@@ -98,23 +98,25 @@ export function Player({ src, onTimeUpdate, onSeek, onEnded }: PlayerProps) {
   return (
     <div className="flex h-full flex-col bg-black">
       {/* Video */}
-      <video
-        ref={videoRef}
-        src={src ?? undefined}
-        className="min-h-0 w-full flex-1 object-contain"
-        onTimeUpdate={(e) => {
-          const t = e.currentTarget.currentTime;
-          if (!dragging) setCurrentTime(t);
-          onTimeUpdate(t);
-        }}
-        onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
-        onPlay={() => setPlaying(true)}
-        onPause={() => setPlaying(false)}
-        onEnded={() => { setPlaying(false); onEnded?.(); }}
-      />
+      <div className="min-h-0 flex-1 flex items-center justify-center overflow-hidden">
+        <video
+          ref={videoRef}
+          src={src ?? undefined}
+          className="max-h-full max-w-full"
+          onTimeUpdate={(e) => {
+            const t = e.currentTarget.currentTime;
+            if (!dragging) setCurrentTime(t);
+            onTimeUpdate(t);
+          }}
+          onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
+          onPlay={() => setPlaying(true)}
+          onPause={() => setPlaying(false)}
+          onEnded={() => { setPlaying(false); onEnded?.(); }}
+        />
+      </div>
 
       {/* Controls */}
-      <div className="flex flex-col gap-2 bg-black/90 px-4 pb-3 pt-3">
+      <div className="shrink-0 flex flex-col gap-2 bg-black/90 px-4 pb-3 pt-3">
         {/* Progress bar */}
         <div
           ref={progressRef}
