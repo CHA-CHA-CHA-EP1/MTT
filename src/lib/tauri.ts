@@ -10,9 +10,10 @@ export interface Job {
   id: string;
   project_id: string;
   file_path: string;
-  status: "pending" | "running" | "done" | "error" | "cancelled";
+  status: "pending" | "running" | "done" | "error" | "cancelled" | "recording";
   whisper_model: string;
   created_at: number;
+  recording_window?: string | null;
 }
 
 export interface Segment {
@@ -124,6 +125,26 @@ export const generateSummary = (jobId: string, prompt: string, model: string) =>
 // Correction
 export const correctTranscript = (jobId: string, model: string, instruction: string) =>
   invoke<void>("correct_transcript", { jobId, model, instruction });
+
+// Recording
+export interface WindowInfo {
+  id: number;
+  title: string;
+  app: string;
+}
+
+export const listWindows = () =>
+  invoke<void>("list_windows");
+
+export const startRecording = (
+  projectId: string,
+  windowId: number,
+  windowTitle: string,
+  whisperModel: string,
+) => invoke<string>("start_recording", { projectId, windowId, windowTitle, whisperModel });
+
+export const stopRecording = (id: string) =>
+  invoke<void>("stop_recording", { id });
 
 // Chat
 export interface ChatMessage { role: "user" | "assistant"; content: string; }

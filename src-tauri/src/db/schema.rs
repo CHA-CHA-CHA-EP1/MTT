@@ -9,12 +9,13 @@ CREATE TABLE IF NOT EXISTS projects (
 );
 
 CREATE TABLE IF NOT EXISTS jobs (
-    id            TEXT    PRIMARY KEY,
-    project_id    TEXT    NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    file_path     TEXT    NOT NULL,
-    status        TEXT    NOT NULL DEFAULT 'pending',
-    whisper_model TEXT    NOT NULL,
-    created_at    INTEGER NOT NULL
+    id               TEXT    PRIMARY KEY,
+    project_id       TEXT    NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    file_path        TEXT    NOT NULL,
+    status           TEXT    NOT NULL DEFAULT 'pending',
+    whisper_model    TEXT    NOT NULL,
+    created_at       INTEGER NOT NULL,
+    recording_window TEXT
 );
 
 CREATE TABLE IF NOT EXISTS segments (

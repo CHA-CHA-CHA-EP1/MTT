@@ -8,6 +8,12 @@ Built with Tauri v2 · React · Rust · Python (mlx-whisper)
 
 ## Features
 
+### Live Recording
+- Record any window directly from the app (ScreenCaptureKit)
+- Real-time transcription — each 30-second chunk is transcribed as it records
+- Audio-only capture (AAC 48kHz stereo) piped to Whisper in real time
+- Requires Screen Recording permission + Tauri app codesigned with `com.apple.security.screen-capture`
+
 ### Transcription
 - Transcribe video files locally using mlx-whisper (Apple Silicon)
 - VAD (Voice Activity Detection) via silero for accurate segment splitting
@@ -57,6 +63,12 @@ flowchart TD
         EV["Event Emitter\nworker:* · summary:*\nchat:* · correction:*"]
     end
 
+    subgraph REC["Swift Screen Recorder (CLI)"]
+        direction TB
+        SCK["ScreenCaptureKit\nSCStream (audio)"]
+        AW["AVAssetWriter\naudio-only AAC\nchunk_N.mp4"]
+    end
+
     subgraph PY["Python Worker (mlx-whisper)"]
         direction TB
         MAIN["main.py\nmessage dispatcher"]
@@ -87,6 +99,10 @@ flowchart TD
     WS -->|stdin JSON| MAIN
     MAIN -->|stdout JSON| WS
     WS --> EV
+
+    WS -->|stdin JSON: start/stop| SCK
+    SCK --> AW
+    AW -->|chunk_ready event| WS
 
     MAIN --> FF
     FF -->|numpy f32 array| VAD
@@ -208,16 +224,20 @@ erDiagram
 ## Setup
 
 ### Prerequisites
-- macOS (Apple Silicon)
-- Rust, Node.js, pnpm
+- macOS 13+ (Apple Silicon)
+- Rust, Node.js, pnpm, Swift (Xcode CLI tools), ffmpeg
 - Python 3.11+ with a venv at `transcription-worker/.venv`
+
+```bash
+brew install ffmpeg
+xcode-select --install
+```
 
 ### Install
 
 ```bash
-pnpm install
-cd transcription-worker && python -m venv .venv && source .venv/bin/activate
-pip install mlx-whisper silero-vad
+make install   # installs Python deps + builds screen-recorder binary
+pnpm install   # installs JS deps
 ```
 
 ### Dev
@@ -252,3 +272,27 @@ Open Settings (⚙️ in Projects header) to configure:
 - Export (.srt / .txt) not yet implemented
 - Whisper model selector not yet implemented (model hardcoded)
 - CC settings (on/off, font size) do not persist across sessions
+- Live recording saves video on **macOS 15+** via `SCRecordingOutput`; macOS 13/14 is audio-only (see Known Issues)
+
+---
+
+## Known Issues
+
+### macOS 15 (Sequoia): VideoToolbox hardware encoder fails in subprocess context
+
+**Symptom:** `AVAssetWriter.append()` fails immediately with `AVFoundationErrorDomain/-11800` wrapping `NSOSStatusErrorDomain/-16122` (`kVTVideoEncoderMalfunctionErr`). Both video and audio appends fail, even though `startWriting()` returns true.
+
+**Root cause:** On macOS 15, the VideoToolbox HEVC/H.264 hardware encoder fails asynchronously immediately after `startWriting()` when called from a CLI subprocess (screen-recorder is spawned by the Tauri app with only `com.apple.security.screen-capture` entitlement). The writer transitions to `.failed` (status 3) before the first frame arrives, causing all subsequent appends to fail with the same error.
+
+**Things that do NOT fix it:** switching codec (H.264 ↔ HEVC), changing pixel format (BGRA → 420v), rounding dimensions to even numbers, adding compression properties (`AVVideoExpectedSourceFrameRateKey`, etc.).
+
+**Current fix (audio-only chunks):** Removed video input from `AVAssetWriter` entirely — no VT session, no async failure. AAC audio encoding works fine. The Whisper pipeline is unaffected since it only needs audio.
+
+**Video recording (macOS 15+):** `SCRecordingOutput` is used alongside the audio-only chunk pipeline. Apple's framework handles all encoding internally, bypassing VideoToolbox entirely. This produces a complete `recording.mp4` (video+audio) saved at the end of the recording. On macOS 13/14, the fallback is audio-only chunks concatenated with ffmpeg.
+
+**Architecture with SCRecordingOutput:**
+```
+SCStream
+  ├── SCRecordingOutput → recording.mp4  (video+audio, for playback — macOS 15+)
+  └── AudioHandler → AVAssetWriter → chunk_N.mp4 → Whisper  (real-time transcription)
+```

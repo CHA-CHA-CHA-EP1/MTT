@@ -18,6 +18,7 @@ pub struct Job {
     pub status: String,
     pub whisper_model: String,
     pub created_at: i64,
+    pub recording_window: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -86,9 +87,9 @@ pub fn delete_project(conn: &Connection, id: &str) -> Result<()> {
 
 pub fn insert_job(conn: &Connection, job: &Job) -> Result<()> {
     conn.execute(
-        "INSERT INTO jobs (id, project_id, file_path, status, whisper_model, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![job.id, job.project_id, job.file_path, job.status, job.whisper_model, job.created_at],
+        "INSERT INTO jobs (id, project_id, file_path, status, whisper_model, created_at, recording_window)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![job.id, job.project_id, job.file_path, job.status, job.whisper_model, job.created_at, job.recording_window],
     )?;
     Ok(())
 }
@@ -100,7 +101,7 @@ pub fn update_job_status(conn: &Connection, id: &str, status: &str) -> Result<()
 
 pub fn get_job(conn: &Connection, id: &str) -> Result<Option<Job>> {
     let mut stmt = conn.prepare(
-        "SELECT id, project_id, file_path, status, whisper_model, created_at FROM jobs WHERE id = ?1",
+        "SELECT id, project_id, file_path, status, whisper_model, created_at, recording_window FROM jobs WHERE id = ?1",
     )?;
     let mut rows = stmt.query(params![id])?;
     if let Some(row) = rows.next()? {
@@ -111,15 +112,21 @@ pub fn get_job(conn: &Connection, id: &str) -> Result<Option<Job>> {
             status: row.get(3)?,
             whisper_model: row.get(4)?,
             created_at: row.get(5)?,
+            recording_window: row.get(6)?,
         }))
     } else {
         Ok(None)
     }
 }
 
+pub fn update_job_file_path(conn: &Connection, id: &str, file_path: &str) -> Result<()> {
+    conn.execute("UPDATE jobs SET file_path = ?1 WHERE id = ?2", params![file_path, id])?;
+    Ok(())
+}
+
 pub fn list_jobs_by_project(conn: &Connection, project_id: &str) -> Result<Vec<Job>> {
     let mut stmt = conn.prepare(
-        "SELECT id, project_id, file_path, status, whisper_model, created_at
+        "SELECT id, project_id, file_path, status, whisper_model, created_at, recording_window
          FROM jobs WHERE project_id = ?1 ORDER BY created_at DESC",
     )?;
     let rows = stmt.query_map(params![project_id], |row| {
@@ -130,6 +137,7 @@ pub fn list_jobs_by_project(conn: &Connection, project_id: &str) -> Result<Vec<J
             status: row.get(3)?,
             whisper_model: row.get(4)?,
             created_at: row.get(5)?,
+            recording_window: row.get(6)?,
         })
     })?;
     rows.collect()
@@ -282,6 +290,7 @@ mod tests {
             status: "pending".into(),
             whisper_model: "large-v3".into(),
             created_at: 1000,
+            recording_window: None,
         }
     }
 

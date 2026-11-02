@@ -128,15 +128,7 @@ def transcribe_file(
 
             yield ChunkMessage(id=job_id, index=i, base_idx=base_idx, segments=new_segs)
 
-            is_last = i == len(chunks) - 1
-            pending = len(all_segs) - corrected_up_to
-
-            if pending >= BATCH_SIZE or (is_last and pending > 0):
-                overlap_start = max(0, corrected_up_to - OVERLAP)
-                batch = all_segs[overlap_start:]
-                corrected_texts = corrector.correct_batch(batch)
-                yield CorrectionMessage(id=job_id, start_idx=overlap_start, texts=corrected_texts)
-                corrected_up_to = len(all_segs)
+            # corrector disabled — enable when API key is configured
 
         yield DoneMessage(id=job_id)
 
