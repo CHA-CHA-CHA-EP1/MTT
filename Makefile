@@ -98,8 +98,8 @@ sign-dev:
 
 dev:
 	@pkill -f "screen-recorder/.build/release/screen-recorder" 2>/dev/null || true
-	@[ -f $(RECORDER_BIN) ] || $(MAKE) install-recorder
-	@[ -f $(TAURI_BIN) ] || $(MAKE) sign-dev
+	$(MAKE) install-recorder
+	$(MAKE) sign-dev
 	pnpm tauri dev
 
 build:
