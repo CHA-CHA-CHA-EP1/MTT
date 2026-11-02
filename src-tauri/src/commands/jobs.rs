@@ -59,8 +59,33 @@ pub fn cancel_job(state: State<AppState>, id: String) -> Result<(), AppError> {
 
 #[tauri::command]
 pub fn delete_job(state: State<AppState>, id: String) -> Result<(), AppError> {
-    let db = state.db.lock().unwrap();
-    Ok(queries::delete_job(&db.conn, &id)?)
+    let file_path = {
+        let db = state.db.lock().unwrap();
+        let job = queries::get_job(&db.conn, &id)?;
+        let path = job.map(|j| j.file_path).unwrap_or_default();
+        queries::delete_job(&db.conn, &id)?;
+        path
+    };
+    cleanup_recording_dir(&file_path);
+    Ok(())
+}
+
+/// Delete the job's tmp recording directory if it lives under the mtt temp folder.
+pub fn cleanup_recording_dir(file_path: &str) {
+    if file_path.is_empty() { return; }
+    let path = std::path::Path::new(file_path);
+    // Only delete dirs we own: …/T/mtt/<uuid>/…
+    let in_mtt_tmp = path.components().any(|c| c.as_os_str() == "mtt");
+    if !in_mtt_tmp { return; }
+    if let Some(dir) = path.parent() {
+        if dir.exists() {
+            if let Err(e) = std::fs::remove_dir_all(dir) {
+                eprintln!("[cleanup] failed to remove {}: {e}", dir.display());
+            } else {
+                eprintln!("[cleanup] removed {}", dir.display());
+            }
+        }
+    }
 }
 
 #[tauri::command]

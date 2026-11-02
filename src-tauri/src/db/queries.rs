@@ -148,6 +148,12 @@ pub fn delete_job(conn: &Connection, id: &str) -> Result<()> {
     Ok(())
 }
 
+pub fn list_all_job_file_paths(conn: &Connection) -> Result<Vec<String>> {
+    let mut stmt = conn.prepare("SELECT file_path FROM jobs WHERE file_path != ''")?;
+    let rows = stmt.query_map([], |row| row.get(0))?;
+    Ok(rows.flatten().collect())
+}
+
 pub fn get_job_summary(conn: &Connection, job_id: &str) -> Result<Option<String>> {
     let mut stmt = conn.prepare("SELECT summary FROM jobs WHERE id = ?1")?;
     let mut rows = stmt.query(params![job_id])?;

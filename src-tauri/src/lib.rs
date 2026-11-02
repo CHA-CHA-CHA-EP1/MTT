@@ -32,6 +32,9 @@ pub fn run() {
 
             let db = Arc::new(Mutex::new(Db::new(db_path.to_str().unwrap())?));
 
+            // Clean up orphaned tmp recording dirs on startup.
+            cleanup_orphaned_tmp(&db);
+
             let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                 .parent()
                 .expect("repo root");
@@ -124,6 +127,40 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// On startup, delete any dirs in the mtt tmp folder not referenced by a job in DB.
+fn cleanup_orphaned_tmp(db: &Arc<Mutex<Db>>) {
+    let tmp_dir = std::env::temp_dir().join("mtt");
+    if !tmp_dir.exists() { return; }
+
+    let known_paths: std::collections::HashSet<String> = {
+        let db_lock = db.lock().unwrap();
+        match queries::list_all_job_file_paths(&db_lock.conn) {
+            Ok(paths) => paths.into_iter().collect(),
+            Err(_) => return,
+        }
+    };
+
+    let entries = match std::fs::read_dir(&tmp_dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        let dir = entry.path();
+        if !dir.is_dir() { continue; }
+        let dir_str = dir.to_string_lossy();
+        // Keep if any known job file_path is inside this dir
+        let in_use = known_paths.iter().any(|p| p.starts_with(dir_str.as_ref()));
+        if !in_use {
+            if let Err(e) = std::fs::remove_dir_all(&dir) {
+                eprintln!("[cleanup] startup: failed to remove {}: {e}", dir.display());
+            } else {
+                eprintln!("[cleanup] startup: removed {}", dir.display());
+            }
+        }
+    }
 }
 
 /// Start Pass 2: re-transcribe the full recording with Whisper offline pipeline.
