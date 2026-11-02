@@ -12,6 +12,7 @@ enum IncomingMessage: Decodable {
     case listWindows
     case start(id: String, windowId: UInt32, chunkDuration: Int, outputDir: String)
     case stop(id: String)
+    case screenshot(windowId: UInt32)
 
     private enum CodingKeys: String, CodingKey {
         case type, id
@@ -34,6 +35,8 @@ enum IncomingMessage: Decodable {
             )
         case "stop":
             self = .stop(id: try c.decode(String.self, forKey: .id))
+        case "screenshot":
+            self = .screenshot(windowId: try c.decode(UInt32.self, forKey: .windowId))
         case let t:
             throw DecodingError.dataCorruptedError(forKey: .type, in: c, debugDescription: "unknown: \(t)")
         }
@@ -64,4 +67,12 @@ func emitRecordingStopped(id: String, filePath: String, duration: Double) {
 
 func emitError(id: String, message: String) {
     emit(["type": "error", "id": id, "message": message])
+}
+
+func emitScreenshot(path: String) {
+    emit(["type": "screenshot", "path": path])
+}
+
+func emitLiveSegment(id: String, idx: Int, start: Double, end: Double, text: String) {
+    emit(["type": "live_segment", "id": id, "idx": idx, "start": start, "end": end, "text": text])
 }

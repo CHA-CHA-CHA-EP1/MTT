@@ -24,6 +24,13 @@ if #available(macOS 13.0, *) {
                         chunkDuration: chunkDuration, outputDir: outputDir)
                 }
 
+            case .screenshot(let windowId):
+                if let path = captureWindowScreenshot(windowId: windowId) {
+                    emitScreenshot(path: path)
+                } else {
+                    emitError(id: "", message: "Failed to capture screenshot for window \(windowId)")
+                }
+
             case .stop(let id):
                 if let rec = recorder {
                     // Cancel the start task if still in-flight, then wait for it to fully exit
@@ -34,7 +41,9 @@ if #available(macOS 13.0, *) {
                     recorder = nil
                     await rec.stop(id: id)
                 } else {
-                    emitError(id: id, message: "no active recording")
+                    // Recording already stopped (or never started) — emit stopped so the
+                    // frontend can reset its state instead of staying stuck on "Recording".
+                    emitRecordingStopped(id: id, filePath: "", duration: 0)
                 }
             }
         }

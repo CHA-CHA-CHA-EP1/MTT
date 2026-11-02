@@ -40,6 +40,10 @@ export function SummaryPanel({ jobId, onClose }: Props) {
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
   const streamRef = useRef<HTMLDivElement>(null);
+  const unlistenRef = useRef<Array<() => void>>([]);
+
+  // Cleanup lingering listeners on unmount (e.g. panel closed while streaming)
+  useEffect(() => () => { unlistenRef.current.forEach(f => f()); }, []);
 
   useEffect(() => {
     // Load summary config + existing summary + models in parallel
@@ -63,6 +67,10 @@ export function SummaryPanel({ jobId, onClose }: Props) {
   }, [summary, view]);
 
   const handleGenerate = async () => {
+    // Cancel any previous listeners before starting a new generation
+    unlistenRef.current.forEach(f => f());
+    unlistenRef.current = [];
+
     setError("");
     setSummary("");
     setView("generating");
@@ -75,10 +83,16 @@ export function SummaryPanel({ jobId, onClose }: Props) {
     const unlistenDone = await listen<{ job_id: string }>("summary:done", (e) => {
       if (e.payload.job_id === jobId) {
         setView("result");
-        unlisten();
-        unlistenDone();
+        cleanup();
       }
     });
+
+    const cleanup = () => {
+      unlisten();
+      unlistenDone();
+      unlistenRef.current = unlistenRef.current.filter(f => f !== unlisten && f !== unlistenDone);
+    };
+    unlistenRef.current.push(unlisten, unlistenDone);
 
     try {
       await generateSummary(jobId, prompt, model);
@@ -87,8 +101,7 @@ export function SummaryPanel({ jobId, onClose }: Props) {
         ? String((e as { message: unknown }).message) : String(e);
       setError(msg);
       setView("config");
-      unlisten();
-      unlistenDone();
+      cleanup();
     }
   };
 

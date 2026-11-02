@@ -11,6 +11,12 @@ pub fn get_segments(state: State<AppState>, job_id: String) -> Result<Vec<Segmen
 }
 
 #[tauri::command]
+pub fn get_segments_since(state: State<AppState>, job_id: String, min_idx: i64) -> Result<Vec<Segment>, AppError> {
+    let db = state.db.lock().unwrap();
+    Ok(queries::get_segments_since(&db.conn, &job_id, min_idx)?)
+}
+
+#[tauri::command]
 pub fn search_segments(state: State<AppState>, query: String) -> Result<Vec<Segment>, AppError> {
     let db = state.db.lock().unwrap();
     Ok(queries::search_segments(&db.conn, &query)?)

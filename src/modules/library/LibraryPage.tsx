@@ -48,10 +48,12 @@ export function LibraryPage() {
     onChunk: ({ id }) => updateStatus(id, "running"),
   });
 
-  // Update job card when recording stops (recorder:stopped is separate from worker events)
+  // Update job card when recording stops
   useEffect(() => {
     const unlisten = listen<{ id: string }>("recorder:stopped", (ev) => {
-      updateStatus(ev.payload.id, "done");
+      // Status transitions to "running" (Transcribing...) — Rust will emit worker:done
+      // via worker:done once all remaining chunks finish transcribing
+      updateStatus(ev.payload.id, "running");
     });
     const unlistenErr = listen<{ id: string; message: string }>("recorder:error", (ev) => {
       if (ev.payload.id) updateStatus(ev.payload.id, "error");
@@ -62,8 +64,8 @@ export function LibraryPage() {
     };
   }, []);
 
-  const { isRecording, elapsed, start, stop } = useRecording(projectId, () => {
-    if (projectId) setActiveProject(projectId);
+  const { isRecording, elapsed, start, stop } = useRecording(projectId, (jobId) => {
+    navigate(`/projects/${projectId}/jobs/${jobId}`);
   });
 
   const handleAdd = async () => {

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>com.mtt.screen-recorder</string>
+    <key>CFBundleName</key>
+    <string>MTT Screen Recorder</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>MTT needs microphone access to transcribe meeting audio.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>MTT uses speech recognition to provide live transcription during recording.</string>
+</dict>
+</plist>

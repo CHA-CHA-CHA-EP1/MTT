@@ -48,10 +48,12 @@ def transcribe_file(
             capture_output=True,
             check=True,
         ).stdout
-        audio = np.frombuffer(raw, dtype=np.float32)
+        # Copy into an owned array then free the raw bytes to halve peak memory usage
+        audio = np.frombuffer(raw, dtype=np.float32).copy()
+        del raw
 
         speech = get_speech_timestamps(
-            torch.from_numpy(audio.copy()),
+            torch.from_numpy(audio),
             vad_model,
             sampling_rate=SR,
             min_silence_duration_ms=500,
@@ -76,7 +78,7 @@ def transcribe_file(
         yield TotalMessage(id=job_id, count=len(chunks))
 
         tail = ""
-        all_segs: list[Segment] = []
+        seg_count = 0
         corrected_up_to = 0
 
         for i, (a, b) in enumerate(chunks):
@@ -123,8 +125,8 @@ def transcribe_file(
             if not suspect:
                 tail = text[-200:]
 
-            base_idx = len(all_segs)
-            all_segs.extend(new_segs)
+            base_idx = seg_count
+            seg_count += len(new_segs)
 
             yield ChunkMessage(id=job_id, index=i, base_idx=base_idx, segments=new_segs)
 

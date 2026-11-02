@@ -9,7 +9,7 @@ interface RecordingState {
   elapsed: number;
 }
 
-export function useRecording(projectId: string | undefined, onJobCreated: () => void) {
+export function useRecording(projectId: string | undefined, onJobCreated: (jobId: string) => void) {
   const [state, setState] = useState<RecordingState>({ jobId: null, elapsed: 0 });
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Ref tracks current jobId so stop() never reads a stale closure value.
@@ -50,7 +50,7 @@ export function useRecording(projectId: string | undefined, onJobCreated: () => 
     try {
       const jobId = await startRecording(projectId, window.id, window.title, WHISPER_MODEL);
       setState({ jobId, elapsed: 0 });
-      onJobCreated();
+      onJobCreated(jobId);
     } catch (e) {
       console.error("start recording failed:", e);
     }

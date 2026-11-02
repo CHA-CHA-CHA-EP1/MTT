@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import ImageIO
 
 func listWindows() async {
     // CGWindowListCopyWindowInfo does not require Screen Recording permission —
@@ -26,4 +27,21 @@ func listWindows() async {
     }
 
     emitWindows(windows)
+}
+
+func captureWindowScreenshot(windowId: UInt32) -> String? {
+    guard let image = CGWindowListCreateImage(
+        .null,
+        .optionIncludingWindow,
+        windowId,
+        [.boundsIgnoreFraming, .bestResolution]
+    ) else { return nil }
+
+    let tempPath = NSTemporaryDirectory() + "mtt-preview-\(windowId).png"
+    let url = URL(fileURLWithPath: tempPath)
+
+    guard let dest = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil) else { return nil }
+    CGImageDestinationAddImage(dest, image, nil)
+    guard CGImageDestinationFinalize(dest) else { return nil }
+    return tempPath
 }

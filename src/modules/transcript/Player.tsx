@@ -11,9 +11,10 @@ interface PlayerProps {
   src: string | null;
   onTimeUpdate: (t: number) => void;
   onSeek: (seek: (time: number) => void) => void;
+  onEnded?: () => void;
 }
 
-export function Player({ src, onTimeUpdate, onSeek }: PlayerProps) {
+export function Player({ src, onTimeUpdate, onSeek, onEnded }: PlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
 
@@ -109,7 +110,7 @@ export function Player({ src, onTimeUpdate, onSeek }: PlayerProps) {
         onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
-        onEnded={() => setPlaying(false)}
+        onEnded={() => { setPlaying(false); onEnded?.(); }}
       />
 
       {/* Controls */}

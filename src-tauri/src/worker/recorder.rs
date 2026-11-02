@@ -12,6 +12,7 @@ pub enum RecorderCommand {
     ListWindows,
     Start { id: String, window_id: u32, chunk_duration: u32, output_dir: String },
     Stop { id: String },
+    Screenshot { window_id: u32 },
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -25,8 +26,10 @@ pub struct WindowInfo {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum RecorderEvent {
     Windows { windows: Vec<WindowInfo> },
+    LiveSegment { id: String, idx: i64, start: f64, end: f64, text: String },
     ChunkReady { id: String, path: String, offset: f64, index: u32 },
     RecordingStopped { id: String, file_path: String, duration: f64 },
+    Screenshot { path: String },
     Error { id: String, message: String },
 }
 

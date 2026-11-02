@@ -10,9 +10,11 @@ Built with Tauri v2 · React · Rust · Python (mlx-whisper)
 
 ### Live Recording
 - Record any window directly from the app (ScreenCaptureKit)
-- Real-time transcription — each 30-second chunk is transcribed as it records
-- Audio-only capture (AAC 48kHz stereo) piped to Whisper in real time
+- Two-step window picker — select window, preview screenshot, then start recording
+- **Two-pass transcription**: recording captures video+audio via `SCRecordingOutput`; after stop, Whisper transcribes the full file (Pass 2)
+- UI hides AI/edit features during recording; shows "Improving transcript quality..." overlay during Pass 2
 - Requires Screen Recording permission + Tauri app codesigned with `com.apple.security.screen-capture`
+- macOS 15+: full video+audio via `SCRecordingOutput`; macOS 13/14: audio-only fallback
 
 ### Transcription
 - Transcribe video files locally using mlx-whisper (Apple Silicon)
@@ -65,8 +67,9 @@ flowchart TD
 
     subgraph REC["Swift Screen Recorder (CLI)"]
         direction TB
-        SCK["ScreenCaptureKit\nSCStream (audio)"]
-        AW["AVAssetWriter\naudio-only AAC\nchunk_N.mp4"]
+        SCK["ScreenCaptureKit\nSCStream"]
+        SCRO["SCRecordingOutput\nrecording.mp4\n(video+audio, macOS 15+)"]
+        AW["AVAssetWriter\naudio-only AAC\nchunk_N.m4a"]
     end
 
     subgraph PY["Python Worker (mlx-whisper)"]
@@ -101,8 +104,10 @@ flowchart TD
     WS --> EV
 
     WS -->|stdin JSON: start/stop| SCK
+    SCK --> SCRO
     SCK --> AW
-    AW -->|chunk_ready event| WS
+    SCRO -->|recording_stopped + file path| WS
+    WS -->|TranscribeFile pass 2| MAIN
 
     MAIN --> FF
     FF -->|numpy f32 array| VAD
@@ -224,7 +229,7 @@ erDiagram
 ## Setup
 
 ### Prerequisites
-- macOS 13+ (Apple Silicon)
+- macOS 13+ (Apple Silicon); macOS 15+ recommended for full video recording
 - Rust, Node.js, pnpm, Swift (Xcode CLI tools), ffmpeg
 - Python 3.11+ with a venv at `transcription-worker/.venv`
 
@@ -272,7 +277,9 @@ Open Settings (⚙️ in Projects header) to configure:
 - Export (.srt / .txt) not yet implemented
 - Whisper model selector not yet implemented (model hardcoded)
 - CC settings (on/off, font size) do not persist across sessions
-- Live recording saves video on **macOS 15+** via `SCRecordingOutput`; macOS 13/14 is audio-only (see Known Issues)
+- Live transcription during recording not yet implemented (real-time STT for Thai requires cloud API)
+- Live recording saves video on **macOS 15+** via `SCRecordingOutput`; macOS 13/14 is audio-only
+- DVR-style chunk playback during recording not yet implemented
 
 ---
 
@@ -293,6 +300,8 @@ Open Settings (⚙️ in Projects header) to configure:
 **Architecture with SCRecordingOutput:**
 ```
 SCStream
-  ├── SCRecordingOutput → recording.mp4  (video+audio, for playback — macOS 15+)
-  └── AudioHandler → AVAssetWriter → chunk_N.mp4 → Whisper  (real-time transcription)
+  ├── SCRecordingOutput → recording.mp4     (video+audio — macOS 15+)
+  └── AudioHandler → AVAssetWriter → chunk_N.m4a  (audio-only; chunk_ready events)
+
+After stop → Rust: start_pass2 → Python: TranscribeFile → Whisper full-file transcription
 ```

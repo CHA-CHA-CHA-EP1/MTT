@@ -47,7 +47,12 @@ export const useJobStore = create<JobStore>((set, get) => ({
 
   updateStatus: (id, status) => {
     set((s) => ({
-      jobs: s.jobs.map((j) => (j.id === id ? { ...j, status } : j)),
+      jobs: s.jobs.map((j) => {
+        if (j.id !== id) return j;
+        // Don't overwrite "recording" with "running" — live chunks arrive while still recording
+        if (j.status === "recording" && status === "running") return j;
+        return { ...j, status };
+      }),
     }));
   },
 }));

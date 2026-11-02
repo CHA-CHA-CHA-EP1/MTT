@@ -173,6 +173,11 @@ pub fn get_segments_text(conn: &Connection, job_id: &str) -> Result<String> {
 
 // --- Segment queries ---
 
+pub fn delete_segments_for_job(conn: &Connection, job_id: &str) -> Result<()> {
+    conn.execute("DELETE FROM segments WHERE job_id = ?1", params![job_id])?;
+    Ok(())
+}
+
 pub fn insert_segment(conn: &Connection, seg: &Segment) -> Result<()> {
     conn.execute(
         "INSERT INTO segments (job_id, idx, start, end, text, corrected_text, suspect)
@@ -207,6 +212,26 @@ pub fn get_segments(conn: &Connection, job_id: &str) -> Result<Vec<Segment>> {
          FROM segments WHERE job_id = ?1 ORDER BY idx",
     )?;
     let rows = stmt.query_map(params![job_id], |row| {
+        Ok(Segment {
+            id: row.get(0)?,
+            job_id: row.get(1)?,
+            idx: row.get(2)?,
+            start: row.get(3)?,
+            end: row.get(4)?,
+            text: row.get(5)?,
+            corrected_text: row.get(6)?,
+            suspect: row.get::<_, i32>(7)? != 0,
+        })
+    })?;
+    rows.collect()
+}
+
+pub fn get_segments_since(conn: &Connection, job_id: &str, min_idx: i64) -> Result<Vec<Segment>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, job_id, idx, start, end, text, corrected_text, suspect
+         FROM segments WHERE job_id = ?1 AND idx >= ?2 ORDER BY idx",
+    )?;
+    let rows = stmt.query_map(params![job_id, min_idx], |row| {
         Ok(Segment {
             id: row.get(0)?,
             job_id: row.get(1)?,

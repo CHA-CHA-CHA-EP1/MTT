@@ -20,6 +20,10 @@ export function ChatPanel({ jobId, onClose }: Props) {
   const [error, setError] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const unlistenRef = useRef<Array<() => void>>([]);
+
+  // Cleanup lingering listeners on unmount (e.g. panel closed while streaming)
+  useEffect(() => () => { unlistenRef.current.forEach(f => f()); }, []);
 
   useEffect(() => {
     getAiConfig().then((cfg) => {
@@ -62,10 +66,16 @@ export function ChatPanel({ jobId, onClose }: Props) {
     const unlistenDone = await listen<{ job_id: string }>("chat:done", (e) => {
       if (e.payload.job_id === jobId) {
         setStreaming(false);
-        unlisten();
-        unlistenDone();
+        cleanup();
       }
     });
+
+    const cleanup = () => {
+      unlisten();
+      unlistenDone();
+      unlistenRef.current = unlistenRef.current.filter(f => f !== unlisten && f !== unlistenDone);
+    };
+    unlistenRef.current.push(unlisten, unlistenDone);
 
     try {
       await chatWithTranscript(jobId, model, newMessages);
@@ -76,8 +86,7 @@ export function ChatPanel({ jobId, onClose }: Props) {
       setStreaming(false);
       // Remove empty assistant message on error
       setMessages((prev) => prev.slice(0, -1));
-      unlisten();
-      unlistenDone();
+      cleanup();
     }
   };
 

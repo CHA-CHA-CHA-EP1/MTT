@@ -66,6 +66,9 @@ export const getJob = (id: string) =>
 export const getSegments = (jobId: string) =>
   invoke<Segment[]>("get_segments", { jobId });
 
+export const getSegmentsSince = (jobId: string, minIdx: number) =>
+  invoke<Segment[]>("get_segments_since", { jobId, minIdx });
+
 export const searchSegments = (query: string) =>
   invoke<Segment[]>("search_segments", { query });
 
@@ -145,6 +148,9 @@ export const startRecording = (
 
 export const stopRecording = (id: string) =>
   invoke<void>("stop_recording", { id });
+
+export const captureWindowScreenshot = (windowId: number) =>
+  invoke<void>("capture_window_screenshot", { windowId });
 
 // Chat
 export interface ChatMessage { role: "user" | "assistant"; content: string; }

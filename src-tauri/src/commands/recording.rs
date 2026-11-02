@@ -60,3 +60,10 @@ pub fn stop_recording(state: State<AppState>, id: String) -> Result<(), AppError
     recorder.send(&RecorderCommand::Stop { id })?;
     Ok(())
 }
+
+#[tauri::command]
+pub fn capture_window_screenshot(state: State<AppState>, window_id: u32) -> Result<(), AppError> {
+    let recorder = state.recorder.as_ref().ok_or_else(|| AppError::Other("screen recorder not available".into()))?;
+    recorder.send(&RecorderCommand::Screenshot { window_id })?;
+    Ok(())
+}

@@ -14,11 +14,13 @@ final class Recorder: NSObject {
     private var videoFilePath = ""
     private var hasVideoOutput = false
 
-    // chunk writer state (guarded by lock)
+    // audio chunk writer state (guarded by lock)
     private var writer: AVAssetWriter?
     private var audioInput: AVAssetWriterInput?
     private var chunkStartPTS: CMTime = .invalid
     private var sessionStarted = false
+    private var recordingStoppedEmitted = false
+    private var stopContinuation: CheckedContinuation<Void, Never>?
 
     // job state
     private(set) var isActive = false
@@ -26,8 +28,6 @@ final class Recorder: NSObject {
     private var outputDir = URL(fileURLWithPath: "/tmp")
     private var chunkDuration: Double = 30
     private var chunkIndex = 0
-    private var videoWidth = 1280
-    private var videoHeight = 720
 
     func start(jobId: String, windowId: CGWindowID, chunkDuration: Int, outputDir: String) async {
         self.jobId = jobId
@@ -36,6 +36,7 @@ final class Recorder: NSObject {
         self.chunkIndex = 0
         self.hasVideoOutput = false
         self.videoFilePath = ""
+        self.recordingStoppedEmitted = false
         fputs("[swift] start job=\(jobId) windowId=\(windowId)\n", stderr)
 
         do {
@@ -52,24 +53,20 @@ final class Recorder: NSObject {
 
             guard !Task.isCancelled else { return }
 
+            let config = SCStreamConfiguration()
+            config.minimumFrameInterval = CMTime(value: 1, timescale: 30)
+            config.capturesAudio = true
+            config.sampleRate = 48_000
+            config.channelCount = 2
+            config.pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+
+            // Capture at window's native resolution
             let windowCenter = CGPoint(x: window.frame.midX, y: window.frame.midY)
             let display = content.displays.first(where: { $0.frame.contains(windowCenter) })
                 ?? content.displays.first
             let scale = display.map { Double($0.width) / Double($0.frame.width) } ?? 2.0
-
-            videoWidth  = min(3840, max(640,  Int(window.frame.width  * scale) & ~1))
-            videoHeight = min(2160, max(360,  Int(window.frame.height * scale) & ~1))
-
-            let config = SCStreamConfiguration()
-            config.width = videoWidth
-            config.height = videoHeight
-            config.minimumFrameInterval = CMTime(value: 1, timescale: 30)
-            config.capturesAudio = true
-            // 48 kHz is valid on all macOS 13+ builds; 16 kHz can produce silent audio.
-            // ffmpeg in the Python worker downsamples to 16 kHz mono for Whisper.
-            config.sampleRate = 48_000
-            config.channelCount = 2
-            config.pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+            config.width  = min(3840, max(640, Int(window.frame.width  * scale) & ~1))
+            config.height = min(2160, max(360, Int(window.frame.height * scale) & ~1))
 
             let filter = SCContentFilter(desktopIndependentWindow: window)
             let captureStream = SCStream(filter: filter, configuration: config, delegate: nil)
@@ -84,7 +81,7 @@ final class Recorder: NSObject {
             try captureStream.addStreamOutput(ah, type: .audio,
                 sampleHandlerQueue: DispatchQueue(label: "mtt.audio"))
 
-            // macOS 15+: use SCRecordingOutput for a complete video+audio file alongside audio chunks
+            // macOS 15+: SCRecordingOutput produces a complete video+audio file
             if #available(macOS 15.0, *) {
                 let videoFile = self.outputDir.appendingPathComponent("recording.mp4")
                 videoFilePath = videoFile.path
@@ -95,13 +92,14 @@ final class Recorder: NSObject {
                 try captureStream.addRecordingOutput(ro)
                 recordingOutput = ro
                 hasVideoOutput = true
-                fputs("[swift] SCRecordingOutput added → \(videoFilePath)\n", stderr)
+                fputs("[swift] SCRecordingOutput → \(videoFilePath)\n", stderr)
             }
 
             self.stream = captureStream
             isActive = true
             startChunk()
             try await captureStream.startCapture()
+            fputs("[swift] capture started\n", stderr)
         } catch {
             fputs("[swift] start error: \(error)\n", stderr)
             emitError(id: jobId, message: "start: \(error.localizedDescription)")
@@ -110,7 +108,7 @@ final class Recorder: NSObject {
 
     func stop(id: String) async {
         guard isActive else {
-            emitRecordingStopped(id: id.isEmpty ? jobId : id, filePath: "", duration: 0)
+            emitStoppedIfNeeded(filePath: "", duration: 0)
             return
         }
         isActive = false
@@ -119,26 +117,36 @@ final class Recorder: NSObject {
             try? await s.stopCapture()
         }
         finishChunk(isFinal: true)
+
+        // Wait until recording_stopped is emitted before returning.
+        // Without this, Recorder is deallocated before SCRecordingOutput
+        // calls its delegate, so the callback never fires.
+        if !recordingStoppedEmitted {
+            await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+                lock.lock()
+                if recordingStoppedEmitted {
+                    lock.unlock()
+                    cont.resume()
+                } else {
+                    stopContinuation = cont
+                    lock.unlock()
+                }
+            }
+        }
     }
 
-    // MARK: - Private
+    // MARK: - Audio chunk writer
 
     private func startChunk() {
         lock.lock()
         defer { lock.unlock() }
 
-        let path = outputDir.appendingPathComponent("chunk_\(chunkIndex).mp4")
-        guard let w = try? AVAssetWriter(url: path, fileType: .mp4) else {
-            emitError(id: jobId, message: "AVAssetWriter init failed for chunk \(chunkIndex)")
+        let path = outputDir.appendingPathComponent("chunk_\(chunkIndex).m4a")
+        guard let w = try? AVAssetWriter(url: path, fileType: .m4a) else {
+            fputs("[swift] AVAssetWriter init failed for chunk \(chunkIndex)\n", stderr)
             return
         }
 
-        // Audio-only: Whisper only needs audio for transcription.
-        // On macOS 15, the VideoToolbox hardware encoder (H.264/HEVC) fails asynchronously
-        // after startWriting() with kVTVideoEncoderMalfunctionErr (-16122), which puts the
-        // entire AVAssetWriter into a failed state and causes all appends to fail.
-        // Omitting the video input eliminates the VT session entirely.
-        // SCRecordingOutput (macOS 15+) handles video recording independently.
         let ai = AVAssetWriterInput(mediaType: .audio, outputSettings: [
             AVFormatIDKey: kAudioFormatMPEG4AAC,
             AVSampleRateKey: 48_000,
@@ -149,7 +157,7 @@ final class Recorder: NSObject {
         if w.canAdd(ai) { w.add(ai) }
 
         guard w.startWriting() else {
-            emitError(id: jobId, message: "startWriting failed for chunk \(chunkIndex): \(w.error?.localizedDescription ?? "?")")
+            fputs("[swift] startWriting failed for chunk \(chunkIndex): \(w.error?.localizedDescription ?? "?")\n", stderr)
             return
         }
 
@@ -163,9 +171,7 @@ final class Recorder: NSObject {
         lock.lock()
         guard let w = writer, sessionStarted else {
             lock.unlock()
-            if isFinal && !hasVideoOutput {
-                emitRecordingStopped(id: jobId, filePath: "", duration: Double(chunkIndex) * chunkDuration)
-            }
+            if isFinal && !hasVideoOutput { emitStoppedIfNeeded(filePath: "", duration: Double(chunkIndex) * chunkDuration) }
             return
         }
 
@@ -183,20 +189,20 @@ final class Recorder: NSObject {
         w.finishWriting { [weak self] in
             guard let self else { return }
             guard w.status == .completed else {
-                emitError(id: self.jobId,
-                    message: "chunk \(idx): \(w.error?.localizedDescription ?? "write failed")")
+                fputs("[swift] chunk \(idx) write failed: \(w.error?.localizedDescription ?? "?")\n", stderr)
+                if isFinal && !self.hasVideoOutput { self.emitStoppedIfNeeded(filePath: "", duration: offset + self.chunkDuration) }
                 return
             }
             emitChunkReady(id: self.jobId, path: path, offset: offset, index: idx)
             if !isFinal {
                 self.startChunk()
             } else if !self.hasVideoOutput {
-                // SCRecordingOutput delegate will emit recording_stopped with the video file path.
-                // Only emit here (audio-only path) when no video output is active.
-                emitRecordingStopped(id: self.jobId, filePath: "", duration: offset + self.chunkDuration)
+                self.emitStoppedIfNeeded(filePath: "", duration: offset + self.chunkDuration)
             }
         }
     }
+
+    // MARK: - Sample buffer handlers
 
     func handleVideo(_ buffer: CMSampleBuffer) {
         guard isActive, CMSampleBufferDataIsReady(buffer) else { return }
@@ -204,7 +210,6 @@ final class Recorder: NSObject {
         guard let w = writer else { lock.unlock(); return }
 
         let pts = CMSampleBufferGetPresentationTimeStamp(buffer)
-
         if !sessionStarted {
             w.startSession(atSourceTime: pts)
             chunkStartPTS = pts
@@ -212,13 +217,11 @@ final class Recorder: NSObject {
         }
 
         let elapsed = CMTimeGetSeconds(CMTimeSubtract(pts, chunkStartPTS))
-        if elapsed >= chunkDuration {
-            lock.unlock()
-            finishChunk(isFinal: false)
-            return
-        }
-        // Video frames are used only for timing — not written (audio-only chunk mode).
         lock.unlock()
+
+        if elapsed >= chunkDuration {
+            finishChunk(isFinal: false)
+        }
     }
 
     func handleAudio(_ buffer: CMSampleBuffer) {
@@ -232,6 +235,19 @@ final class Recorder: NSObject {
         }
         lock.unlock()
     }
+
+    // MARK: - Helpers
+
+    func emitStoppedIfNeeded(filePath: String, duration: Double) {
+        lock.lock()
+        guard !recordingStoppedEmitted else { lock.unlock(); return }
+        recordingStoppedEmitted = true
+        let cont = stopContinuation
+        stopContinuation = nil
+        lock.unlock()
+        emitRecordingStopped(id: jobId, filePath: filePath, duration: duration)
+        cont?.resume()
+    }
 }
 
 // MARK: - SCRecordingOutputDelegate (macOS 15+)
@@ -239,22 +255,22 @@ final class Recorder: NSObject {
 @available(macOS 15.0, *)
 extension Recorder: SCRecordingOutputDelegate {
     func recordingOutputDidStartRecording(_ recordingOutput: SCRecordingOutput) {
-        fputs("[swift] video recording started\n", stderr)
+        fputs("[swift] SCRecordingOutput started\n", stderr)
     }
 
     func recordingOutputDidFinishRecording(_ recordingOutput: SCRecordingOutput) {
         let duration = CMTimeGetSeconds(recordingOutput.recordedDuration)
-        fputs("[swift] video recording finished → \(videoFilePath) (\(duration)s)\n", stderr)
-        emitRecordingStopped(id: jobId, filePath: videoFilePath, duration: duration)
+        fputs("[swift] SCRecordingOutput finished → \(videoFilePath) (\(duration)s)\n", stderr)
         self.recordingOutput = nil
         hasVideoOutput = false
+        emitStoppedIfNeeded(filePath: videoFilePath, duration: duration)
     }
 
     func recordingOutput(_ recordingOutput: SCRecordingOutput, didFailWithError error: any Error) {
-        fputs("[swift] video recording error: \(error)\n", stderr)
-        // Fall back to audio-only behavior: let finishChunk emit recording_stopped
+        fputs("[swift] SCRecordingOutput error: \(error)\n", stderr)
         hasVideoOutput = false
         self.recordingOutput = nil
+        // finishChunk(isFinal:true) will emit recording_stopped as fallback
     }
 }
 
