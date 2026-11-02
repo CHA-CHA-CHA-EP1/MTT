@@ -38,8 +38,22 @@ pub fn run() {
             let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                 .parent()
                 .expect("repo root");
-            let worker_script = repo_root.join("transcription-worker/main.py");
-            let python_bin = repo_root.join("transcription-worker/.venv/bin/python");
+
+            // In a bundled .app, sidecars live next to the main executable.
+            // In dev, fall back to repo paths.
+            let exe_dir = std::env::current_exe().ok()
+                .and_then(|p| p.parent().map(|d| d.to_path_buf()));
+
+            let (worker_bin, worker_args): (std::path::PathBuf, Vec<String>) = {
+                let prod = exe_dir.as_ref().map(|d| d.join("mtt-worker"));
+                if prod.as_ref().map(|p| p.exists()).unwrap_or(false) {
+                    (prod.unwrap(), vec![])
+                } else {
+                    let python = repo_root.join("transcription-worker/.venv/bin/python");
+                    let script = repo_root.join("transcription-worker/main.py");
+                    (python, vec![script.to_string_lossy().into_owned()])
+                }
+            };
 
             let recording_chunks: Arc<Mutex<HashMap<String, Vec<(u32, String)>>>> =
                 Arc::new(Mutex::new(HashMap::new()));
@@ -47,15 +61,19 @@ pub fn run() {
             let db_for_worker = Arc::clone(&db);
             let app_handle_w = app_handle.clone();
 
+            let worker_args_ref: Vec<&str> = worker_args.iter().map(|s| s.as_str()).collect();
             let worker = Worker::spawn(
-                python_bin.to_str().unwrap(),
-                worker_script.to_str().unwrap(),
+                worker_bin.to_str().unwrap(),
+                &worker_args_ref,
                 Arc::new(move |msg| {
                     handle_worker_message(&app_handle_w, &db_for_worker, msg);
                 }),
             )?;
 
-            let recorder_bin = repo_root.join("screen-recorder/.build/release/screen-recorder");
+            let recorder_bin = exe_dir.as_ref()
+                .map(|d| d.join("screen-recorder"))
+                .filter(|p| p.exists())
+                .unwrap_or_else(|| repo_root.join("screen-recorder/.build/release/screen-recorder"));
 
             let recorder: Option<RecorderWorker> = if recorder_bin.exists() {
                 let db_for_rec = Arc::clone(&db);

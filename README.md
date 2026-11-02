@@ -50,7 +50,7 @@ flowchart TD
         direction TB
         PP["ProjectsPage\n+ SettingsModal"]
         LP["LibraryPage"]
-        TP["TranscriptPage\n(Player · SegmentList · Search)"]
+        TP["TranscriptPage\n(Player · SegmentList · Search\nWindowPickerModal)"]
         SP["SummaryPanel"]
         CP["CorrectionPanel"]
         CH["ChatPanel"]
@@ -58,27 +58,28 @@ flowchart TD
 
     subgraph TAURI["Tauri v2 Core (Rust)"]
         direction TB
-        CMD["Commands\nprojects · jobs · segments\nsettings · summary · correction · chat"]
-        DB[("SQLite WAL\nprojects\njobs + summary\nsegments + FTS5")]
+        CMD["Commands\nprojects · jobs · segments · recording\nsettings · summary · correction · chat"]
+        DB[("SQLite WAL\nprojects · jobs + summary\nsegments + FTS5")]
         STORE[("tauri-plugin-store\nAI config JSON")]
         WS["Worker Supervisor\n(stdin/stdout IPC)"]
-        EV["Event Emitter\nworker:* · summary:*\nchat:* · correction:*"]
+        RS["Recorder Supervisor\n(stdin/stdout IPC)"]
+        EV["Event Emitter\nworker:* · recorder:*\nsummary:* · chat:* · correction:*"]
     end
 
-    subgraph REC["Swift Screen Recorder (CLI)"]
+    subgraph REC["Swift Screen Recorder (sidecar)"]
         direction TB
         SCK["ScreenCaptureKit\nSCStream"]
         SCRO["SCRecordingOutput\nrecording.mp4\n(video+audio, macOS 15+)"]
         AW["AVAssetWriter\naudio-only AAC\nchunk_N.m4a"]
     end
 
-    subgraph PY["Python Worker (mlx-whisper)"]
+    subgraph PY["Python Worker (sidecar · mlx-whisper)"]
         direction TB
-        MAIN["main.py\nmessage dispatcher"]
-        VAD["Silero VAD\nspeech timestamps"]
+        MAIN["main.py / mtt-worker binary\nmessage dispatcher"]
         FF["ffmpeg\naudio extraction\n(mono · 16kHz · f32le)"]
+        VAD["Silero VAD\nspeech timestamps"]
         WH["mlx_whisper\ntranscribe()"]
-        COR["corrector.py\nAnthropic Haiku\nbatch text correction"]
+        COR["corrector.py\nbatch text correction"]
     end
 
     subgraph AI["External AI APIs"]
@@ -96,6 +97,7 @@ flowchart TD
     CMD <-->|read/write| DB
     CMD <-->|read/write| STORE
     CMD --> WS
+    CMD --> RS
     CMD -->|HTTP reqwest streaming| AI
     EV -->|listen events| UI
 
@@ -103,27 +105,28 @@ flowchart TD
     MAIN -->|stdout JSON| WS
     WS --> EV
 
-    WS -->|stdin JSON: start/stop| SCK
+    RS -->|stdin JSON: start/stop/screenshot| SCK
     SCK --> SCRO
     SCK --> AW
-    SCRO -->|recording_stopped + file path| WS
-    WS -->|TranscribeFile pass 2| MAIN
+    AW -->|chunk_ready event| RS
+    SCRO -->|recording_stopped + file path| RS
+    RS --> EV
+    RS -->|TranscribeFile pass 2| WS
 
     MAIN --> FF
     FF -->|numpy f32 array| VAD
     VAD -->|speech chunks| WH
     WH -->|segments| COR
-    COR -->|ANTHROPIC_API_KEY| ANT
+    COR --> ANT
 ```
 
-### Transcription Data Flow
+### Import File — Transcription Flow
 
 ```mermaid
 sequenceDiagram
     participant R as React UI
     participant T as Tauri (Rust)
     participant P as Python Worker
-    participant A as Anthropic API
 
     R->>T: invoke("create_job", {filePath})
     T->>T: INSERT job (status=pending)
@@ -140,16 +143,46 @@ sequenceDiagram
         T-->>R: event: worker:chunk
     end
 
-    loop every 15 segments
-        P->>A: POST /v1/messages (Haiku)
-        A-->>P: corrected JSON array
-        P-->>T: stdout: Correction {start_idx, texts[]}
-        T->>T: UPDATE segments.corrected_text
-        T-->>R: event: worker:correction
-    end
-
     P-->>T: stdout: Done
     T->>T: UPDATE job status=done
+    T-->>R: event: worker:done
+```
+
+### Live Recording — Two-Pass Flow
+
+```mermaid
+sequenceDiagram
+    participant R as React UI
+    participant T as Tauri (Rust)
+    participant S as Screen Recorder (Swift)
+    participant P as Python Worker
+
+    R->>T: invoke("start_recording", {windowId})
+    T->>T: INSERT job (status=recording)
+    T->>S: stdin: start {id, windowId, outputDir}
+    S->>S: SCStream + SCRecordingOutput started
+    T-->>R: event: recorder:started
+
+    note over S: recording in progress...
+    S-->>T: chunk_ready {index, path}  (every 30s audio chunk)
+    T-->>R: event: recorder:chunk_ready
+
+    R->>T: invoke("stop_recording")
+    T->>S: stdin: stop {id}
+    S->>S: SCRecordingOutput finishes → recording.mp4
+    S-->>T: recording_stopped {file_path, duration}
+    T-->>R: event: recorder:stopped
+    T-->>R: event: recorder:refining
+
+    note over T,P: Pass 2 — Whisper full-file transcription
+    T->>P: stdin: TranscribeFile {id, file=recording.mp4}
+    P->>P: ffmpeg + VAD + mlx_whisper
+    loop each chunk
+        P-->>T: Chunk {segments[]}
+        T->>T: INSERT segments (replaces live segments)
+        T-->>R: event: worker:chunk
+    end
+    P-->>T: Done
     T-->>R: event: worker:done
 ```
 
@@ -226,12 +259,29 @@ erDiagram
     segments ||--|| segments_fts : "synced via triggers"
 ```
 
-## Setup
+## Installation (End Users)
+
+### Requirements
+- macOS 13+ Apple Silicon (macOS 15+ for full video recording)
+- `ffmpeg` — `brew install ffmpeg`
+
+### Steps
+1. Download `mtt_x.x.x.dmg` from [Releases](../../releases)
+2. Open the DMG and drag **mtt** to Applications
+3. Run once in Terminal to bypass Gatekeeper:
+   ```bash
+   xattr -cr /Applications/mtt.app
+   ```
+4. Open mtt → grant **Screen Recording** permission when prompted
+5. (Optional) Configure AI features in Settings ⚙️
+
+---
+
+## Development Setup
 
 ### Prerequisites
-- macOS 13+ (Apple Silicon); macOS 15+ recommended for full video recording
-- Rust, Node.js, pnpm, Swift (Xcode CLI tools), ffmpeg
-- Python 3.11+ with a venv at `transcription-worker/.venv`
+- macOS 13+ Apple Silicon
+- Rust, Node.js, pnpm, Swift (Xcode CLI tools), Python 3.11+, ffmpeg
 
 ```bash
 brew install ffmpeg
@@ -241,20 +291,23 @@ xcode-select --install
 ### Install
 
 ```bash
-make install   # installs Python deps + builds screen-recorder binary
-pnpm install   # installs JS deps
+make install   # Python venv + deps + screen-recorder binary
+pnpm install   # JS deps
 ```
 
 ### Dev
 
 ```bash
-pnpm tauri dev
+make dev       # builds + signs screen-recorder, then launches tauri dev
 ```
 
-### Build
+### Release Build
+
+Produces a self-contained `.dmg` (Python worker bundled via PyInstaller, no external Python needed):
 
 ```bash
-pnpm tauri build
+make build-release
+# → src-tauri/target/release/bundle/dmg/mtt_0.0.1.dmg
 ```
 
 ---

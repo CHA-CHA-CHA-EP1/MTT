@@ -14,7 +14,7 @@ JOB_ID    ?= test-1
 WINDOW_ID ?= 0
 DURATION  ?= 10
 
-.PHONY: install install-worker install-recorder sign-dev dev build test test-rust test-ts test-init test-transcribe test-recorder test-record clean check-deps
+.PHONY: install install-worker install-recorder sign-dev dev build build-release test test-rust test-ts test-init test-transcribe test-recorder test-record clean check-deps
 
 # --- Dependency check ---
 
@@ -104,6 +104,38 @@ dev:
 
 build:
 	pnpm tauri build
+
+# Full release build: PyInstaller worker + screen-recorder → bundle into .app/.dmg
+build-release: install-worker install-recorder
+	@echo "→ Building Python worker with PyInstaller..."
+	$(PIP) install pyinstaller --quiet
+	mkdir -p src-tauri/binaries
+	cd $(WORKER) && ../$(VENV)/bin/pyinstaller main.py \
+		--onefile --name mtt-worker \
+		--distpath ../src-tauri/binaries \
+		--workpath /tmp/mtt-pyinstaller \
+		--specpath /tmp/mtt-pyinstaller \
+		--collect-all mlx \
+		--collect-all mlx_whisper \
+		--clean --noconfirm
+	mv src-tauri/binaries/mtt-worker src-tauri/binaries/mtt-worker-aarch64-apple-darwin
+	@echo "→ Copying screen-recorder sidecar..."
+	cp $(RECORDER_BIN) src-tauri/binaries/screen-recorder-aarch64-apple-darwin
+	codesign --sign - --force src-tauri/binaries/screen-recorder-aarch64-apple-darwin
+	@echo "→ Building Tauri app..."
+	pnpm tauri build
+	@echo "→ Injecting sidecars into .app bundle..."
+	@app=$$(ls -d src-tauri/target/release/bundle/macos/*.app | head -1); \
+	echo "  app: $$app"; \
+	cp src-tauri/binaries/mtt-worker-aarch64-apple-darwin "$$app/Contents/MacOS/mtt-worker"; \
+	cp src-tauri/binaries/screen-recorder-aarch64-apple-darwin "$$app/Contents/MacOS/screen-recorder"; \
+	codesign --sign - --force "$$app/Contents/MacOS/mtt-worker"; \
+	codesign --sign - --force "$$app/Contents/MacOS/screen-recorder"; \
+	echo "→ Repackaging DMG..."; \
+	dmg_dir=src-tauri/target/release/bundle/dmg; \
+	rm -f $$dmg_dir/*.dmg; \
+	hdiutil create -volname "mtt" -srcfolder "$$app" -ov -format UDZO "$$dmg_dir/mtt_0.0.1.dmg"; \
+	echo "✓ Done → $$dmg_dir/mtt_0.0.1.dmg"
 
 # --- Misc ---
 

@@ -12,9 +12,14 @@ pub struct Worker {
 }
 
 impl Worker {
-    pub fn spawn(python_bin: &str, worker_script: &str, on_message: MessageHandler) -> std::io::Result<Self> {
-        let mut child = Command::new(python_bin)
-            .arg(worker_script)
+    /// Spawn the worker process.
+    /// - Production: `binary` is the PyInstaller bundle, `extra_args` is empty.
+    /// - Dev: `binary` is the Python interpreter, `extra_args` is `[script_path]`.
+    pub fn spawn(binary: &str, extra_args: &[&str], on_message: MessageHandler) -> std::io::Result<Self> {
+        let mut child = Command::new(binary)
+            .args(extra_args)
+            // Ensure brew-installed tools (ffmpeg, etc.) are in PATH when bundled as .app
+            .env("PATH", "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
@@ -74,7 +79,7 @@ mod tests {
         let received_clone = Arc::clone(&received);
 
         let (python, script) = fake_worker_path();
-        let worker = Worker::spawn(&python, &script, Arc::new(move |msg| {
+        let worker = Worker::spawn(&python, &[script.as_str()], Arc::new(move |msg| {
             received_clone.lock().unwrap().push(msg);
         })).unwrap();
 
@@ -91,7 +96,7 @@ mod tests {
         let received_clone = Arc::clone(&received);
 
         let (python, script) = fake_worker_path();
-        let worker = Worker::spawn(&python, &script, Arc::new(move |msg| {
+        let worker = Worker::spawn(&python, &[script.as_str()], Arc::new(move |msg| {
             received_clone.lock().unwrap().push(msg);
         })).unwrap();
 
