@@ -69,8 +69,9 @@ def transcribe_file(
             torch.from_numpy(audio),
             vad_model,
             sampling_rate=SR,
-            min_silence_duration_ms=500,
-            speech_pad_ms=200,
+            threshold=0.4,
+            min_silence_duration_ms=800,
+            speech_pad_ms=300,
         )
 
         chunks: list[list[int]] = []
