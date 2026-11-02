@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { startRecording, stopRecording, type WindowInfo } from "@/lib/tauri";
-
-const WHISPER_MODEL = "mlx-community/whisper-large-v3-turbo";
+import { useWhisperStore } from "@/lib/whisperConfig";
 
 interface RecordingState {
   jobId: string | null;
@@ -11,6 +10,7 @@ interface RecordingState {
 
 export function useRecording(projectId: string | undefined, onJobCreated: (jobId: string) => void) {
   const [state, setState] = useState<RecordingState>({ jobId: null, elapsed: 0 });
+  const whisperModel = useWhisperStore((s) => s.model);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Ref tracks current jobId so stop() never reads a stale closure value.
   const jobIdRef = useRef<string | null>(null);
@@ -48,7 +48,7 @@ export function useRecording(projectId: string | undefined, onJobCreated: (jobId
   const start = async (window: WindowInfo) => {
     if (!projectId) return;
     try {
-      const jobId = await startRecording(projectId, window.id, window.title, WHISPER_MODEL);
+      const jobId = await startRecording(projectId, window.id, window.title, whisperModel);
       setState({ jobId, elapsed: 0 });
       onJobCreated(jobId);
     } catch (e) {

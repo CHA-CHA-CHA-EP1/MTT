@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 
 use tauri::{Emitter, Manager};
 
-use crate::db::{queries, Db};
+use crate::db::{queries, DbPool, new_pool};
 use crate::state::AppState;
 use crate::worker::recorder::{RecorderEvent, RecorderWorker};
 use crate::worker::{protocol::OutgoingMessage, Worker};
@@ -30,7 +30,7 @@ pub fn run() {
                 .join("mtt.db");
             std::fs::create_dir_all(db_path.parent().unwrap())?;
 
-            let db = Arc::new(Mutex::new(Db::new(db_path.to_str().unwrap())?));
+            let db = new_pool(db_path.to_str().unwrap())?;
 
             // Clean up orphaned tmp recording dirs on startup.
             cleanup_orphaned_tmp(&db);
@@ -58,7 +58,7 @@ pub fn run() {
             let recording_chunks: Arc<Mutex<HashMap<String, Vec<(u32, String)>>>> =
                 Arc::new(Mutex::new(HashMap::new()));
 
-            let db_for_worker = Arc::clone(&db);
+            let db_for_worker = db.clone();
             let app_handle_w = app_handle.clone();
 
             let worker_args_ref: Vec<&str> = worker_args.iter().map(|s| s.as_str()).collect();
@@ -76,7 +76,7 @@ pub fn run() {
                 .unwrap_or_else(|| repo_root.join("screen-recorder/.build/release/screen-recorder"));
 
             let recorder: Option<RecorderWorker> = if recorder_bin.exists() {
-                let db_for_rec = Arc::clone(&db);
+                let db_for_rec = db.clone();
                 let recording_chunks_for_rec = Arc::clone(&recording_chunks);
                 let app_handle_rec = app_handle.clone();
 
@@ -107,6 +107,7 @@ pub fn run() {
                 worker,
                 recorder,
                 recording_chunks,
+                ai_cancels: Arc::new(Mutex::new(HashMap::new())),
             });
 
             Ok(())
@@ -134,9 +135,12 @@ pub fn run() {
             commands::settings::save_summary_config,
             commands::settings::list_ai_models,
             commands::settings::test_ai_connection,
+            commands::settings::get_whisper_model,
+            commands::settings::save_whisper_model,
             commands::chat::chat_with_transcript,
             commands::summary::get_job_summary,
             commands::summary::generate_summary,
+            commands::summary::cancel_ai_stream,
             commands::correction::correct_transcript,
             commands::recording::list_windows,
             commands::recording::start_recording,
@@ -148,13 +152,16 @@ pub fn run() {
 }
 
 /// On startup, delete any dirs in the mtt tmp folder not referenced by a job in DB.
-fn cleanup_orphaned_tmp(db: &Arc<Mutex<Db>>) {
+fn cleanup_orphaned_tmp(db: &DbPool) {
     let tmp_dir = std::env::temp_dir().join("mtt");
     if !tmp_dir.exists() { return; }
 
     let known_paths: std::collections::HashSet<String> = {
-        let db_lock = db.lock().unwrap();
-        match queries::list_all_job_file_paths(&db_lock.conn) {
+        let conn = match db.get() {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        match queries::list_all_job_file_paths(&conn) {
             Ok(paths) => paths.into_iter().collect(),
             Err(_) => return,
         }
@@ -183,11 +190,11 @@ fn cleanup_orphaned_tmp(db: &Arc<Mutex<Db>>) {
 
 /// Start Pass 2: re-transcribe the full recording with Whisper offline pipeline.
 /// Emits `recorder:refining`, clears live segments, then queues TranscribeFile.
-fn start_pass2(app: &tauri::AppHandle, db: &Arc<Mutex<Db>>, job_id: &str, file_path: &str) {
+fn start_pass2(app: &tauri::AppHandle, db: &DbPool, job_id: &str, file_path: &str) {
     if file_path.is_empty() {
-        let db_lock = db.lock().unwrap();
-        queries::update_job_status(&db_lock.conn, job_id, "done").ok();
-        drop(db_lock);
+        if let Ok(conn) = db.get() {
+            queries::update_job_status(&conn, job_id, "done").ok();
+        }
         app.emit("worker:done", serde_json::json!({ "id": job_id })).ok();
         eprintln!("[pass2] no file for job={job_id}, marking done");
         return;
@@ -195,9 +202,8 @@ fn start_pass2(app: &tauri::AppHandle, db: &Arc<Mutex<Db>>, job_id: &str, file_p
 
     app.emit("recorder:refining", serde_json::json!({ "id": job_id })).ok();
 
-    {
-        let db_lock = db.lock().unwrap();
-        queries::delete_segments_for_job(&db_lock.conn, job_id).ok();
+    if let Ok(conn) = db.get() {
+        queries::delete_segments_for_job(&conn, job_id).ok();
     }
 
     let state: tauri::State<AppState> = app.state();
@@ -205,6 +211,7 @@ fn start_pass2(app: &tauri::AppHandle, db: &Arc<Mutex<Db>>, job_id: &str, file_p
         id: job_id.to_owned(),
         file: file_path.to_owned(),
         mode: "offline".into(),
+        language: "th".into(),
     }).ok();
 
     eprintln!("[pass2] started for job={job_id} file={file_path}");
@@ -212,7 +219,7 @@ fn start_pass2(app: &tauri::AppHandle, db: &Arc<Mutex<Db>>, job_id: &str, file_p
 
 fn handle_worker_message(
     app: &tauri::AppHandle,
-    db: &Arc<Mutex<Db>>,
+    db: &DbPool,
     msg: OutgoingMessage,
 ) {
     match &msg {
@@ -224,47 +231,47 @@ fn handle_worker_message(
         }
         OutgoingMessage::Chunk { id, base_idx, index, segments } => {
             eprintln!("[worker] Chunk id={id} index={index} segs={}", segments.len());
-            let db_lock = db.lock().unwrap();
-            for (i, seg) in segments.iter().enumerate() {
-                let db_seg = queries::Segment {
-                    id: 0,
-                    job_id: id.clone(),
-                    idx: (*base_idx as i64) + i as i64,
-                    start: seg.start,
-                    end: seg.end,
-                    text: seg.text.clone(),
-                    corrected_text: None,
-                    suspect: seg.suspect,
-                };
-                queries::insert_segment(&db_lock.conn, &db_seg).ok();
+            if let Ok(conn) = db.get() {
+                for (i, seg) in segments.iter().enumerate() {
+                    let db_seg = queries::Segment {
+                        id: 0,
+                        job_id: id.clone(),
+                        idx: (*base_idx as i64) + i as i64,
+                        start: seg.start,
+                        end: seg.end,
+                        text: seg.text.clone(),
+                        corrected_text: None,
+                        suspect: seg.suspect,
+                    };
+                    queries::insert_segment(&conn, &db_seg).ok();
+                }
             }
-            drop(db_lock);
             app.emit("worker:chunk", serde_json::json!({ "id": id, "index": index })).ok();
         }
         OutgoingMessage::Correction { id, start_idx, texts } => {
-            let db_lock = db.lock().unwrap();
-            queries::update_segment_correction(&db_lock.conn, id, *start_idx as i64, texts).ok();
-            drop(db_lock);
+            if let Ok(conn) = db.get() {
+                queries::update_segment_correction(&conn, id, *start_idx as i64, texts).ok();
+            }
             app.emit("worker:correction", serde_json::json!({ "id": id, "start_idx": start_idx })).ok();
         }
         OutgoingMessage::Done { id } => {
             eprintln!("[worker] Done id={id}");
-            let db_lock = db.lock().unwrap();
-            queries::update_job_status(&db_lock.conn, id, "done").ok();
-            drop(db_lock);
+            if let Ok(conn) = db.get() {
+                queries::update_job_status(&conn, id, "done").ok();
+            }
             app.emit("worker:done", serde_json::json!({ "id": id })).ok();
         }
         OutgoingMessage::Error { id, message } => {
             eprintln!("[worker] Error id={id} message={message}");
-            let db_lock = db.lock().unwrap();
-            queries::update_job_status(&db_lock.conn, id, "error").ok();
-            drop(db_lock);
+            if let Ok(conn) = db.get() {
+                queries::update_job_status(&conn, id, "error").ok();
+            }
             app.emit("worker:error", serde_json::json!({ "id": id, "message": message })).ok();
         }
         OutgoingMessage::Cancelled { id } => {
-            let db_lock = db.lock().unwrap();
-            queries::update_job_status(&db_lock.conn, id, "cancelled").ok();
-            drop(db_lock);
+            if let Ok(conn) = db.get() {
+                queries::update_job_status(&conn, id, "cancelled").ok();
+            }
             app.emit("worker:cancelled", serde_json::json!({ "id": id })).ok();
         }
     }
@@ -272,7 +279,7 @@ fn handle_worker_message(
 
 fn handle_recorder_event(
     app: &tauri::AppHandle,
-    db: &Arc<Mutex<Db>>,
+    db: &DbPool,
     recording_chunks: &Arc<Mutex<HashMap<String, Vec<(u32, String)>>>>,
     ev: RecorderEvent,
 ) {
@@ -281,18 +288,18 @@ fn handle_recorder_event(
             app.emit("recorder:windows", &windows).ok();
         }
         RecorderEvent::LiveSegment { id, idx, start, end, text } => {
-            let db_lock = db.lock().unwrap();
-            queries::insert_segment(&db_lock.conn, &queries::Segment {
-                id: 0,
-                job_id: id.clone(),
-                idx,
-                start,
-                end,
-                text,
-                corrected_text: None,
-                suspect: false,
-            }).ok();
-            drop(db_lock);
+            if let Ok(conn) = db.get() {
+                queries::insert_segment(&conn, &queries::Segment {
+                    id: 0,
+                    job_id: id.clone(),
+                    idx,
+                    start,
+                    end,
+                    text,
+                    corrected_text: None,
+                    suspect: false,
+                }).ok();
+            }
             app.emit("worker:chunk", serde_json::json!({ "id": id })).ok();
         }
         RecorderEvent::ChunkReady { id, path, offset: _, index } => {
@@ -337,12 +344,11 @@ fn handle_recorder_event(
                     .unwrap_or_default()
             };
 
-            {
-                let db_lock = db.lock().unwrap();
+            if let Ok(conn) = db.get() {
                 if !final_path.is_empty() {
-                    queries::update_job_file_path(&db_lock.conn, &id, &final_path).ok();
+                    queries::update_job_file_path(&conn, &id, &final_path).ok();
                 }
-                queries::update_job_status(&db_lock.conn, &id, "running").ok();
+                queries::update_job_status(&conn, &id, "running").ok();
             }
 
             app.emit("recorder:stopped", serde_json::json!({

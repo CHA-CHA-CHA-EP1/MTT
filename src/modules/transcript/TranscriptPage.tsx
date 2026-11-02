@@ -167,6 +167,9 @@ export function TranscriptPage() {
     getJob(jobId).then((job) => {
       if (job.status === "recording") {
         setIsLiveRecording(true);
+      } else if (job.status === "running") {
+        setIsRefining(true);
+        if (job.file_path) setVideoSrc(convertFileSrc(job.file_path));
       } else if (job.file_path) {
         setVideoSrc(convertFileSrc(job.file_path));
       }

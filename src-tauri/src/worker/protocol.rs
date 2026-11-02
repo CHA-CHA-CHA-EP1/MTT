@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum IncomingMessage {
     Init { whisper_model: String },
-    TranscribeFile { id: String, file: String, mode: String },
+    TranscribeFile { id: String, file: String, mode: String, language: String },
     Cancel { id: String },
 }
 
@@ -49,6 +49,7 @@ mod tests {
             id: "job-1".into(),
             file: "/tmp/test.mp4".into(),
             mode: "offline".into(),
+            language: "th".into(),
         };
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains(r#""type":"transcribe_file""#));

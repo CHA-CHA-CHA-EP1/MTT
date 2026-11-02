@@ -28,6 +28,7 @@ class TranscribeFileMessage(BaseModel):
     id: str
     file: str
     mode: Literal["offline", "stream"] = "offline"
+    language: str = "th"
 
 
 class CancelMessage(BaseModel):

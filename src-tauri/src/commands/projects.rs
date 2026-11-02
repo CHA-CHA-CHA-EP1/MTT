@@ -16,31 +16,31 @@ pub fn create_project(state: State<AppState>, name: String) -> Result<String, Ap
         .as_secs() as i64;
 
     let project = Project { id: id.clone(), name, created_at };
-    let db = state.db.lock().unwrap();
-    queries::insert_project(&db.conn, &project)?;
+    let conn = state.db.get()?;
+    queries::insert_project(&conn, &project)?;
     Ok(id)
 }
 
 #[tauri::command]
 pub fn list_projects(state: State<AppState>) -> Result<Vec<Project>, AppError> {
-    let db = state.db.lock().unwrap();
-    Ok(queries::list_projects(&db.conn)?)
+    let conn = state.db.get()?;
+    Ok(queries::list_projects(&conn)?)
 }
 
 #[tauri::command]
 pub fn get_project(state: State<AppState>, id: String) -> Result<Project, AppError> {
-    let db = state.db.lock().unwrap();
-    queries::get_project(&db.conn, &id)?.ok_or(AppError::NotFound)
+    let conn = state.db.get()?;
+    queries::get_project(&conn, &id)?.ok_or(AppError::NotFound)
 }
 
 #[tauri::command]
 pub fn rename_project(state: State<AppState>, id: String, name: String) -> Result<(), AppError> {
-    let db = state.db.lock().unwrap();
-    Ok(queries::rename_project(&db.conn, &id, &name)?)
+    let conn = state.db.get()?;
+    Ok(queries::rename_project(&conn, &id, &name)?)
 }
 
 #[tauri::command]
 pub fn delete_project(state: State<AppState>, id: String) -> Result<(), AppError> {
-    let db = state.db.lock().unwrap();
-    Ok(queries::delete_project(&db.conn, &id)?)
+    let conn = state.db.get()?;
+    Ok(queries::delete_project(&conn, &id)?)
 }

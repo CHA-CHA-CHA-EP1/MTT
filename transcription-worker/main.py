@@ -12,6 +12,7 @@ from silero_vad import load_silero_vad
 from corrector import Corrector
 from protocol import (
     CancelMessage,
+    ErrorMessage,
     IncomingMessage,
     InitMessage,
     OutgoingMessage,
@@ -61,11 +62,16 @@ def main() -> None:
 
         if isinstance(msg, InitMessage):
             _log(f"loading models: {msg.whisper_model}")
-            vad_model = load_silero_vad()
-            whisper_model_path = msg.whisper_model
-            corrector = Corrector()
-            _warmup(whisper_model_path)
-            _emit(ReadyMessage())
+            try:
+                if vad_model is None:
+                    vad_model = load_silero_vad()
+                    corrector = Corrector()
+                _warmup(msg.whisper_model)
+                whisper_model_path = msg.whisper_model
+                _emit(ReadyMessage())
+            except Exception as e:
+                _log(f"init error: {e}")
+                _emit(ErrorMessage(id="", message=f"Failed to load model '{msg.whisper_model}': {e}"))
 
         elif isinstance(msg, TranscribeFileMessage):
             if vad_model is None or whisper_model_path is None or corrector is None:
@@ -78,8 +84,10 @@ def main() -> None:
             job_id = msg.id
             file_path = msg.file
 
-            def run(jid: str = job_id, fp: str = file_path, ce: threading.Event = cancel_event) -> None:
-                for out in transcribe_file(fp, jid, vad_model, whisper_model_path, corrector, ce):
+            lang = msg.language
+
+            def run(jid: str = job_id, fp: str = file_path, ce: threading.Event = cancel_event, lg: str = lang) -> None:
+                for out in transcribe_file(fp, jid, vad_model, whisper_model_path, corrector, ce, lg):
                     _emit(out)
                 active_jobs.pop(jid, None)
 

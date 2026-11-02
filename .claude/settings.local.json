@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(pnpm add *)",
-      "Bash(nm -arch arm64 -gU /Library/Developer/CommandLineTools/usr/lib/swift/pm/ManifestAPI/libPackageDescription.dylib)"
+      "Bash(nm -arch arm64 -gU /Library/Developer/CommandLineTools/usr/lib/swift/pm/ManifestAPI/libPackageDescription.dylib)",
+      "Bash(cargo check:*)"
     ]
   }
 }

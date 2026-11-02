@@ -303,10 +303,12 @@ pub fn search_segments(conn: &Connection, query: &str) -> Result<Vec<Segment>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::Db;
+    use crate::db::schema;
 
-    fn setup() -> Db {
-        Db::new(":memory:").unwrap()
+    fn setup() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(schema::CREATE_TABLES).unwrap();
+        conn
     }
 
     fn make_project(id: &str) -> Project {
@@ -328,36 +330,36 @@ mod tests {
     #[test]
     fn test_project_crud() {
         let db = setup();
-        insert_project(&db.conn, &make_project("p-1")).unwrap();
-        let found = get_project(&db.conn, "p-1").unwrap().unwrap();
+        insert_project(&db, &make_project("p-1")).unwrap();
+        let found = get_project(&db, "p-1").unwrap().unwrap();
         assert_eq!(found.name, "Test Project");
 
-        rename_project(&db.conn, "p-1", "Renamed").unwrap();
-        let found = get_project(&db.conn, "p-1").unwrap().unwrap();
+        rename_project(&db, "p-1", "Renamed").unwrap();
+        let found = get_project(&db, "p-1").unwrap().unwrap();
         assert_eq!(found.name, "Renamed");
 
-        let list = list_projects(&db.conn).unwrap();
+        let list = list_projects(&db).unwrap();
         assert_eq!(list.len(), 1);
 
-        delete_project(&db.conn, "p-1").unwrap();
-        assert!(get_project(&db.conn, "p-1").unwrap().is_none());
+        delete_project(&db, "p-1").unwrap();
+        assert!(get_project(&db, "p-1").unwrap().is_none());
     }
 
     #[test]
     fn test_delete_project_cascades_jobs() {
         let db = setup();
-        insert_project(&db.conn, &make_project("p-1")).unwrap();
-        insert_job(&db.conn, &make_job("job-1", "p-1")).unwrap();
-        delete_project(&db.conn, "p-1").unwrap();
-        assert!(get_job(&db.conn, "job-1").unwrap().is_none());
+        insert_project(&db, &make_project("p-1")).unwrap();
+        insert_job(&db, &make_job("job-1", "p-1")).unwrap();
+        delete_project(&db, "p-1").unwrap();
+        assert!(get_job(&db, "job-1").unwrap().is_none());
     }
 
     #[test]
     fn test_insert_and_get_job() {
         let db = setup();
-        insert_project(&db.conn, &make_project("p-1")).unwrap();
-        insert_job(&db.conn, &make_job("job-1", "p-1")).unwrap();
-        let found = get_job(&db.conn, "job-1").unwrap().unwrap();
+        insert_project(&db, &make_project("p-1")).unwrap();
+        insert_job(&db, &make_job("job-1", "p-1")).unwrap();
+        let found = get_job(&db, "job-1").unwrap().unwrap();
         assert_eq!(found.file_path, "/tmp/test.mp4");
         assert_eq!(found.project_id, "p-1");
     }
@@ -365,28 +367,28 @@ mod tests {
     #[test]
     fn test_update_job_status() {
         let db = setup();
-        insert_project(&db.conn, &make_project("p-1")).unwrap();
-        insert_job(&db.conn, &make_job("job-1", "p-1")).unwrap();
-        update_job_status(&db.conn, "job-1", "done").unwrap();
-        let found = get_job(&db.conn, "job-1").unwrap().unwrap();
+        insert_project(&db, &make_project("p-1")).unwrap();
+        insert_job(&db, &make_job("job-1", "p-1")).unwrap();
+        update_job_status(&db, "job-1", "done").unwrap();
+        let found = get_job(&db, "job-1").unwrap().unwrap();
         assert_eq!(found.status, "done");
     }
 
     #[test]
     fn test_list_jobs_by_project() {
         let db = setup();
-        insert_project(&db.conn, &make_project("p-1")).unwrap();
-        insert_job(&db.conn, &make_job("job-1", "p-1")).unwrap();
-        insert_job(&db.conn, &make_job("job-2", "p-1")).unwrap();
-        let jobs = list_jobs_by_project(&db.conn, "p-1").unwrap();
+        insert_project(&db, &make_project("p-1")).unwrap();
+        insert_job(&db, &make_job("job-1", "p-1")).unwrap();
+        insert_job(&db, &make_job("job-2", "p-1")).unwrap();
+        let jobs = list_jobs_by_project(&db, "p-1").unwrap();
         assert_eq!(jobs.len(), 2);
     }
 
     #[test]
     fn test_insert_and_get_segments() {
         let db = setup();
-        insert_project(&db.conn, &make_project("p-1")).unwrap();
-        insert_job(&db.conn, &make_job("job-1", "p-1")).unwrap();
+        insert_project(&db, &make_project("p-1")).unwrap();
+        insert_job(&db, &make_job("job-1", "p-1")).unwrap();
         let seg = Segment {
             id: 0,
             job_id: "job-1".into(),
@@ -397,8 +399,8 @@ mod tests {
             corrected_text: None,
             suspect: false,
         };
-        insert_segment(&db.conn, &seg).unwrap();
-        let segs = get_segments(&db.conn, "job-1").unwrap();
+        insert_segment(&db, &seg).unwrap();
+        let segs = get_segments(&db, "job-1").unwrap();
         assert_eq!(segs.len(), 1);
         assert_eq!(segs[0].text, "สวัสดีครับ");
     }

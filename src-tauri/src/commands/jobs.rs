@@ -38,14 +38,15 @@ pub fn create_job(
     };
 
     {
-        let db = state.db.lock().unwrap();
-        queries::insert_job(&db.conn, &job)?;
+        let conn = state.db.get()?;
+        queries::insert_job(&conn, &job)?;
     }
 
     state.worker.send(&IncomingMessage::TranscribeFile {
         id: id.clone(),
         file: file_path,
         mode: "offline".into(),
+        language: "th".into(),
     })?;
 
     Ok(id)
@@ -60,10 +61,10 @@ pub fn cancel_job(state: State<AppState>, id: String) -> Result<(), AppError> {
 #[tauri::command]
 pub fn delete_job(state: State<AppState>, id: String) -> Result<(), AppError> {
     let file_path = {
-        let db = state.db.lock().unwrap();
-        let job = queries::get_job(&db.conn, &id)?;
+        let conn = state.db.get()?;
+        let job = queries::get_job(&conn, &id)?;
         let path = job.map(|j| j.file_path).unwrap_or_default();
-        queries::delete_job(&db.conn, &id)?;
+        queries::delete_job(&conn, &id)?;
         path
     };
     cleanup_recording_dir(&file_path);
@@ -90,12 +91,12 @@ pub fn cleanup_recording_dir(file_path: &str) {
 
 #[tauri::command]
 pub fn list_jobs_by_project(state: State<AppState>, project_id: String) -> Result<Vec<Job>, AppError> {
-    let db = state.db.lock().unwrap();
-    Ok(queries::list_jobs_by_project(&db.conn, &project_id)?)
+    let conn = state.db.get()?;
+    Ok(queries::list_jobs_by_project(&conn, &project_id)?)
 }
 
 #[tauri::command]
 pub fn get_job(state: State<AppState>, id: String) -> Result<Job, AppError> {
-    let db = state.db.lock().unwrap();
-    queries::get_job(&db.conn, &id)?.ok_or(AppError::NotFound)
+    let conn = state.db.get()?;
+    queries::get_job(&conn, &id)?.ok_or(AppError::NotFound)
 }

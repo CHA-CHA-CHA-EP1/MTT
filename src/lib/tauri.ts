@@ -125,6 +125,16 @@ export const getJobSummary = (jobId: string) =>
 export const generateSummary = (jobId: string, prompt: string, model: string) =>
   invoke<void>("generate_summary", { jobId, prompt, model });
 
+export const cancelAiStream = (jobId: string) =>
+  invoke<void>("cancel_ai_stream", { jobId });
+
+// Whisper model
+export const getWhisperModel = () =>
+  invoke<string>("get_whisper_model");
+
+export const saveWhisperModel = (model: string) =>
+  invoke<void>("save_whisper_model", { model });
+
 // Correction
 export const correctTranscript = (jobId: string, model: string, instruction: string) =>
   invoke<void>("correct_transcript", { jobId, model, instruction });

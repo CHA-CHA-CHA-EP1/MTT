@@ -1,10 +1,12 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::time::Duration;
 
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_store::StoreExt;
+use tokio_util::sync::CancellationToken;
 
 use crate::commands::settings::AiConfig;
-use crate::db::{queries, Db};
+use crate::db::{queries, DbPool};
 use crate::error::AppError;
 use crate::state::AppState;
 
@@ -24,13 +26,18 @@ fn extract_chunk_text(json: &serde_json::Value, provider: &str) -> Option<String
 
 async fn stream_ai(
     app: &AppHandle,
-    db: &Arc<Mutex<Db>>,
+    db: &DbPool,
     job_id: &str,
     config: &AiConfig,
     prompt: &str,
     transcript: &str,
+    cancel_token: CancellationToken,
 ) -> Result<(), AppError> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(30))
+        .build()
+        .map_err(|e| AppError::Other(e.to_string()))?;
+
     let base = config.effective_base_url();
 
     let messages = serde_json::json!([
@@ -74,7 +81,18 @@ async fn stream_ai(
     let mut resp = resp;
 
     loop {
-        match resp.chunk().await.map_err(|e| AppError::Other(e.to_string()))? {
+        let maybe_bytes = tokio::select! {
+            result = resp.chunk() => result.map_err(|e| AppError::Other(e.to_string()))?,
+            _ = cancel_token.cancelled() => {
+                app.emit("summary:cancelled", serde_json::json!({ "job_id": job_id })).ok();
+                return Ok(());
+            }
+            _ = tokio::time::sleep(Duration::from_secs(60)) => {
+                return Err(AppError::Other("AI response timed out (no data for 60s)".to_string()));
+            }
+        };
+
+        match maybe_bytes {
             None => break,
             Some(bytes) => {
                 buffer.push_str(&String::from_utf8_lossy(&bytes));
@@ -112,8 +130,8 @@ async fn stream_ai(
 
     // Save to DB
     {
-        let db = db.lock().unwrap();
-        queries::set_job_summary(&db.conn, job_id, &full_text).ok();
+        let conn = db.get().map_err(|e| AppError::Db(e.to_string()))?;
+        queries::set_job_summary(&conn, job_id, &full_text).ok();
     }
 
     app.emit("summary:done", serde_json::json!({ "job_id": job_id })).ok();
@@ -125,8 +143,8 @@ pub fn get_job_summary(
     state: tauri::State<'_, AppState>,
     job_id: String,
 ) -> Result<Option<String>, AppError> {
-    let db = state.db.lock().unwrap();
-    queries::get_job_summary(&db.conn, &job_id).map_err(|e| AppError::Db(e.to_string()))
+    let conn = state.db.get()?;
+    queries::get_job_summary(&conn, &job_id).map_err(|e| AppError::Db(e.to_string()))
 }
 
 #[tauri::command]
@@ -150,8 +168,8 @@ pub async fn generate_summary(
     let config = AiConfig { model, ..ai_config };
 
     let transcript = {
-        let db = state.db.lock().unwrap();
-        queries::get_segments_text(&db.conn, &job_id)
+        let conn = state.db.get()?;
+        queries::get_segments_text(&conn, &job_id)
             .map_err(|e| AppError::Db(e.to_string()))?
     };
 
@@ -159,8 +177,28 @@ pub async fn generate_summary(
         return Err(AppError::Other("No transcript found for this job".to_string()));
     }
 
-    let db = Arc::clone(&state.db);
-    stream_ai(&app, &db, &job_id, &config, &prompt, &transcript).await?;
+    // Clone out of state to avoid holding State<'_> across .await
+    let db = state.db.clone();
+    let ai_cancels = Arc::clone(&state.ai_cancels);
 
+    let cancel_token = CancellationToken::new();
+    ai_cancels.lock().unwrap().insert(job_id.clone(), cancel_token.clone());
+
+    let result = stream_ai(&app, &db, &job_id, &config, &prompt, &transcript, cancel_token).await;
+
+    ai_cancels.lock().unwrap().remove(&job_id);
+
+    result
+}
+
+/// Cancel an active summary or chat stream for the given job.
+#[tauri::command]
+pub fn cancel_ai_stream(
+    state: tauri::State<'_, AppState>,
+    job_id: String,
+) -> Result<(), AppError> {
+    if let Some(token) = state.ai_cancels.lock().unwrap().get(&job_id) {
+        token.cancel();
+    }
     Ok(())
 }
