@@ -99,8 +99,8 @@ pub async fn correct_transcript(
     let config = AiConfig { model, ..ai_config };
 
     let segments = {
-        let db = state.db.lock().unwrap();
-        queries::get_segments(&db.conn, &job_id)
+        let conn = state.db.get()?;
+        queries::get_segments(&conn, &job_id)
             .map_err(|e| AppError::Db(e.to_string()))?
     };
 
@@ -110,7 +110,10 @@ pub async fn correct_transcript(
 
     let total_batches = (segments.len() + BATCH_SIZE - 1) / BATCH_SIZE;
     let system_prompt = build_prompt(&instruction);
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| AppError::Other(e.to_string()))?;
     let mut corrected_count = 0usize;
 
     for (batch_idx, batch) in segments.chunks(BATCH_SIZE).enumerate() {
@@ -146,12 +149,12 @@ pub async fn correct_transcript(
         // Parse JSON response
         if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&raw) {
             if let Some(corrections) = parsed["corrections"].as_array() {
-                let db = state.db.lock().unwrap();
+                let conn = state.db.get()?;
                 for item in corrections {
                     let id = item["id"].as_i64().unwrap_or(-1);
                     let corrected = item["corrected"].as_str().unwrap_or("");
                     if id >= 0 && !corrected.is_empty() {
-                        queries::set_segment_text(&db.conn, id, Some(corrected.to_string())).ok();
+                        queries::set_segment_text(&conn, id, Some(corrected.to_string())).ok();
                         corrected_count += 1;
                     }
                 }

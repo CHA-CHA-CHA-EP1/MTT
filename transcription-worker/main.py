@@ -78,8 +78,10 @@ def main() -> None:
             job_id = msg.id
             file_path = msg.file
 
-            def run(jid: str = job_id, fp: str = file_path, ce: threading.Event = cancel_event) -> None:
-                for out in transcribe_file(fp, jid, vad_model, whisper_model_path, corrector, ce):
+            lang = msg.language
+
+            def run(jid: str = job_id, fp: str = file_path, ce: threading.Event = cancel_event, lg: str = lang) -> None:
+                for out in transcribe_file(fp, jid, vad_model, whisper_model_path, corrector, ce, lg):
                     _emit(out)
                 active_jobs.pop(jid, None)
 

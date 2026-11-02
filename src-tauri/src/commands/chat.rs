@@ -1,6 +1,10 @@
+use std::sync::Arc;
+use std::time::Duration;
+
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_store::StoreExt;
+use tokio_util::sync::CancellationToken;
 
 use crate::commands::settings::AiConfig;
 use crate::db::queries;
@@ -40,16 +44,41 @@ pub async fn chat_with_transcript(
     let config = AiConfig { model, ..ai_config };
 
     let transcript = {
-        let db = state.db.lock().unwrap();
-        queries::get_segments_text(&db.conn, &job_id).map_err(|e| AppError::Db(e.to_string()))?
+        let conn = state.db.get()?;
+        queries::get_segments_text(&conn, &job_id).map_err(|e| AppError::Db(e.to_string()))?
     };
 
+    // Clone out of state to avoid holding State<'_> across .await
+    let ai_cancels = Arc::clone(&state.ai_cancels);
+
+    let cancel_token = CancellationToken::new();
+    ai_cancels.lock().unwrap().insert(job_id.clone(), cancel_token.clone());
+
+    let result = do_chat_stream(&app, &job_id, &config, &transcript, messages, cancel_token).await;
+
+    ai_cancels.lock().unwrap().remove(&job_id);
+
+    result
+}
+
+async fn do_chat_stream(
+    app: &AppHandle,
+    job_id: &str,
+    config: &AiConfig,
+    transcript: &str,
+    messages: Vec<ChatMessage>,
+    cancel_token: CancellationToken,
+) -> Result<(), AppError> {
     let system = format!(
         "You are a helpful assistant. Answer questions about the following meeting transcript.\n\n---TRANSCRIPT---\n{}\n---END TRANSCRIPT---\n\nAnswer concisely and in the same language as the user's question.",
         transcript
     );
 
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(30))
+        .build()
+        .map_err(|e| AppError::Other(e.to_string()))?;
+
     let base = config.effective_base_url();
 
     let api_messages: Vec<serde_json::Value> = messages
@@ -98,7 +127,18 @@ pub async fn chat_with_transcript(
     let mut resp = resp;
 
     loop {
-        match resp.chunk().await.map_err(|e| AppError::Other(e.to_string()))? {
+        let maybe_bytes = tokio::select! {
+            result = resp.chunk() => result.map_err(|e| AppError::Other(e.to_string()))?,
+            _ = cancel_token.cancelled() => {
+                app.emit("chat:cancelled", serde_json::json!({ "job_id": job_id })).ok();
+                return Ok(());
+            }
+            _ = tokio::time::sleep(Duration::from_secs(60)) => {
+                return Err(AppError::Other("AI response timed out (no data for 60s)".to_string()));
+            }
+        };
+
+        match maybe_bytes {
             None => break,
             Some(bytes) => {
                 buffer.push_str(&String::from_utf8_lossy(&bytes));

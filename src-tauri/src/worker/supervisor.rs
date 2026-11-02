@@ -105,6 +105,7 @@ mod tests {
             id: "job-1".into(),
             file: "/tmp/test.mp4".into(),
             mode: "offline".into(),
+            language: "th".into(),
         }).unwrap();
         std::thread::sleep(std::time::Duration::from_millis(500));
 

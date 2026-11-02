@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import subprocess
+import tempfile
 import threading
 import zlib
 from collections.abc import Generator
@@ -26,7 +28,11 @@ SR = 16_000
 MAX_CHUNK = 28 * SR
 BATCH_SIZE = 15
 OVERLAP = 3
-GLOSSARY = "Rust, Graydon Hoare, Mozilla, Ownership, Garbage Collector, Memory Bug, Crash, Microsoft, Amazon, Google"
+GLOSSARY_TH = "การประชุม, สรุป, รายงาน, โปรเจกต์, ทีม, ผู้จัดการ, นักพัฒนา, ซอฟต์แวร์, แอปพลิเคชัน, ระบบ"
+GLOSSARY_EN = "meeting, summary, report, project, team, manager, developer, software, application, system"
+
+def _glossary(language: str) -> str:
+    return GLOSSARY_TH if language == "th" else GLOSSARY_EN
 
 
 def _ratio(text: str) -> float:
@@ -41,16 +47,23 @@ def transcribe_file(
     whisper_model_path: str,
     corrector: Corrector,
     cancel_event: threading.Event,
+    language: str = "th",
 ) -> Generator[OutgoingMessage, None, None]:
+    tmp_path = None
     try:
-        raw = subprocess.run(
-            ["ffmpeg", "-v", "error", "-i", file, "-vn", "-ac", "1", "-ar", str(SR), "-f", "f32le", "-"],
-            capture_output=True,
+        # Decode audio to a temp file so numpy reads directly from disk —
+        # avoids holding both the raw subprocess bytes AND the numpy array
+        # in memory simultaneously (saves ~50% peak RAM for long recordings).
+        with tempfile.NamedTemporaryFile(suffix=".pcm", delete=False) as tmp:
+            tmp_path = tmp.name
+        subprocess.run(
+            ["ffmpeg", "-y", "-v", "error", "-i", file, "-vn", "-ac", "1", "-ar", str(SR), "-f", "f32le", tmp_path],
             check=True,
-        ).stdout
-        # Copy into an owned array then free the raw bytes to halve peak memory usage
-        audio = np.frombuffer(raw, dtype=np.float32).copy()
-        del raw
+            stdin=subprocess.DEVNULL,
+        )
+        audio = np.fromfile(tmp_path, dtype=np.float32)
+        os.unlink(tmp_path)
+        tmp_path = None
 
         speech = get_speech_timestamps(
             torch.from_numpy(audio),
@@ -77,6 +90,7 @@ def transcribe_file(
 
         yield TotalMessage(id=job_id, count=len(chunks))
 
+        glossary = _glossary(language)
         tail = ""
         seg_count = 0
         corrected_up_to = 0
@@ -87,12 +101,12 @@ def transcribe_file(
                 return
 
             clip = audio[a:b]
-            prompt = (GLOSSARY + " " + tail).strip()
+            prompt = (glossary + " " + tail).strip()
 
             r = mlx_whisper.transcribe(
                 clip,
                 path_or_hf_repo=whisper_model_path,
-                language="th",
+                language=language,
                 initial_prompt=prompt,
                 condition_on_previous_text=False,
             )
@@ -103,8 +117,8 @@ def transcribe_file(
                 r = mlx_whisper.transcribe(
                     clip,
                     path_or_hf_repo=whisper_model_path,
-                    language="th",
-                    initial_prompt=GLOSSARY,
+                    language=language,
+                    initial_prompt=glossary,
                     condition_on_previous_text=False,
                     temperature=(0.2, 0.4, 0.6),
                 )
@@ -139,4 +153,5 @@ def transcribe_file(
     except Exception as e:
         yield ErrorMessage(id=job_id, message=str(e))
     finally:
-        pass
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)

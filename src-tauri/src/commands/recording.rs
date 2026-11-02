@@ -40,8 +40,8 @@ pub fn start_recording(
     };
 
     {
-        let db = state.db.lock().unwrap();
-        queries::insert_job(&db.conn, &job)?;
+        let conn = state.db.get()?;
+        queries::insert_job(&conn, &job)?;
     }
 
     recorder.send(&RecorderCommand::Start {
