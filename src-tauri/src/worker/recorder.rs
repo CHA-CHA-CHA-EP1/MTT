@@ -26,7 +26,7 @@ pub struct WindowInfo {
 pub enum RecorderEvent {
     Windows { windows: Vec<WindowInfo> },
     ChunkReady { id: String, path: String, offset: f64, index: u32 },
-    RecordingStopped { id: String, duration: f64 },
+    RecordingStopped { id: String, file_path: String, duration: f64 },
     Error { id: String, message: String },
 }
 
@@ -36,7 +36,13 @@ pub type RecorderHandler = Arc<dyn Fn(RecorderEvent) + Send + Sync>;
 
 pub struct RecorderWorker {
     stdin: Mutex<ChildStdin>,
-    _child: Mutex<Child>,
+    child: Mutex<Child>,
+}
+
+impl Drop for RecorderWorker {
+    fn drop(&mut self) {
+        self.child.lock().unwrap().kill().ok();
+    }
 }
 
 impl RecorderWorker {
@@ -70,7 +76,7 @@ impl RecorderWorker {
 
         Ok(Self {
             stdin: Mutex::new(stdin),
-            _child: Mutex::new(child),
+            child: Mutex::new(child),
         })
     }
 

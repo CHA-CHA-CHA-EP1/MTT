@@ -58,8 +58,8 @@ func emitChunkReady(id: String, path: String, offset: Double, index: Int) {
     emit(["type": "chunk_ready", "id": id, "path": path, "offset": offset, "index": index])
 }
 
-func emitRecordingStopped(id: String, duration: Double) {
-    emit(["type": "recording_stopped", "id": id, "duration": duration])
+func emitRecordingStopped(id: String, filePath: String, duration: Double) {
+    emit(["type": "recording_stopped", "id": id, "file_path": filePath, "duration": duration])
 }
 
 func emitError(id: String, message: String) {

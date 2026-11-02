@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, FileVideo, Plus, Loader2, CheckCircle, XCircle, Clock, Video, Square, Monitor } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
+import { listen } from "@tauri-apps/api/event";
 import { useJobStore } from "./jobStore";
 import { useWorkerEvents } from "@/common/hooks/useWorkerEvents";
 import { ThemeToggle } from "@/common/components/ThemeToggle";
@@ -46,6 +47,20 @@ export function LibraryPage() {
     onCancelled: ({ id }) => updateStatus(id, "cancelled"),
     onChunk: ({ id }) => updateStatus(id, "running"),
   });
+
+  // Update job card when recording stops (recorder:stopped is separate from worker events)
+  useEffect(() => {
+    const unlisten = listen<{ id: string }>("recorder:stopped", (ev) => {
+      updateStatus(ev.payload.id, "done");
+    });
+    const unlistenErr = listen<{ id: string; message: string }>("recorder:error", (ev) => {
+      if (ev.payload.id) updateStatus(ev.payload.id, "error");
+    });
+    return () => {
+      unlisten.then(fn => fn());
+      unlistenErr.then(fn => fn());
+    };
+  }, []);
 
   const { isRecording, elapsed, start, stop } = useRecording(projectId, () => {
     if (projectId) setActiveProject(projectId);

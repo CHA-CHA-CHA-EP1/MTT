@@ -17,17 +17,43 @@ export function WindowPickerModal({ onSelect, onClose }: Props) {
   const [selected, setSelected] = useState<number | null>(null);
 
   useEffect(() => {
-    const unlisten = listen<WindowInfo[]>("recorder:windows", (ev) => {
-      setWindows(ev.payload);
-      setLoading(false);
-    });
+    let unlistenFn: (() => void) | null = null;
+    let cancelled = false;
 
-    listWindows().catch((e) => {
-      setError(String(e));
-      setLoading(false);
-    });
+    const init = async () => {
+      // Register listener BEFORE sending command — prevents race where Swift
+      // responds before the Tauri event bridge finishes registering the handler.
+      unlistenFn = await listen<WindowInfo[]>("recorder:windows", (ev) => {
+        if (!cancelled) {
+          setWindows(ev.payload);
+          setLoading(false);
+        }
+      });
+      // Also catch errors emitted by Swift's list_windows (id is empty string)
+      const unlistenErr = await listen<{ id: string; message: string }>("recorder:error", (ev) => {
+        if (!cancelled && ev.payload.id === "") {
+          setError(ev.payload.message);
+          setLoading(false);
+        }
+      });
+      const originalUnlisten = unlistenFn;
+      unlistenFn = () => { originalUnlisten(); unlistenErr(); };
+      try {
+        await listWindows();
+      } catch (e) {
+        if (!cancelled) {
+          setError(String(e));
+          setLoading(false);
+        }
+      }
+    };
 
-    return () => { unlisten.then(fn => fn()); };
+    init();
+
+    return () => {
+      cancelled = true;
+      unlistenFn?.();
+    };
   }, []);
 
   const handleConfirm = () => {

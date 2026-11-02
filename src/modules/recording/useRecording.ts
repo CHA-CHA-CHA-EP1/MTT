@@ -12,6 +12,12 @@ interface RecordingState {
 export function useRecording(projectId: string | undefined, onJobCreated: () => void) {
   const [state, setState] = useState<RecordingState>({ jobId: null, elapsed: 0 });
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Ref tracks current jobId so stop() never reads a stale closure value.
+  const jobIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    jobIdRef.current = state.jobId;
+  }, [state.jobId]);
 
   // Listen for recorder:stopped to clear recording state
   useEffect(() => {
@@ -51,8 +57,9 @@ export function useRecording(projectId: string | undefined, onJobCreated: () => 
   };
 
   const stop = async () => {
-    if (!state.jobId) return;
-    await stopRecording(state.jobId).catch(console.error);
+    const id = jobIdRef.current;
+    if (!id) return;
+    await stopRecording(id).catch(console.error);
   };
 
   return {

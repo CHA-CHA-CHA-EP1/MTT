@@ -180,10 +180,11 @@ fn handle_worker_message(
             }
         }
         OutgoingMessage::Chunk { id, base_idx, index, segments } => {
+            eprintln!("[worker] Chunk id={id} index={index} segs={}", segments.len());
             if is_chunk_job(id) {
                 let (parent_id, offset, chunk_idx) = {
                     let ci = chunk_info.lock().unwrap();
-                    match ci.get(id) {
+                    match ci.get(id.as_str()) {
                         Some(info) => (info.parent_job_id.clone(), info.offset, info.chunk_index),
                         None => {
                             eprintln!("[worker] unknown chunk id: {id}");
@@ -191,6 +192,7 @@ fn handle_worker_message(
                         }
                     }
                 };
+                eprintln!("[worker] writing {} segs for parent={parent_id} offset={offset}", segments.len());
                 let db_lock = db.lock().unwrap();
                 for (i, seg) in segments.iter().enumerate() {
                     let db_seg = queries::Segment {
@@ -240,7 +242,10 @@ fn handle_worker_message(
             }
         }
         OutgoingMessage::Done { id } => {
-            if !is_chunk_job(id) {
+            eprintln!("[worker] Done id={id}");
+            if is_chunk_job(id) {
+                chunk_info.lock().unwrap().remove(id.as_str());
+            } else {
                 let db_lock = db.lock().unwrap();
                 queries::update_job_status(&db_lock.conn, id, "done").ok();
                 drop(db_lock);
@@ -248,6 +253,9 @@ fn handle_worker_message(
             }
         }
         OutgoingMessage::Error { id, message } => {
+            if is_chunk_job(id) {
+                chunk_info.lock().unwrap().remove(id.as_str());
+            }
             let target_id = if is_chunk_job(id) { parent_job_id(id).to_owned() } else { id.clone() };
             let db_lock = db.lock().unwrap();
             queries::update_job_status(&db_lock.conn, &target_id, "error").ok();
@@ -278,6 +286,7 @@ fn handle_recorder_event(
             app.emit("recorder:windows", &windows).ok();
         }
         RecorderEvent::ChunkReady { id, path, offset, index } => {
+            eprintln!("[recorder] ChunkReady job={id} index={index} path={path} offset={offset}");
             let chunk_job_id = format!("{id}:chunk:{index}");
 
             {
@@ -294,17 +303,19 @@ fn handle_recorder_event(
             }
 
             let msg = crate::worker::protocol::IncomingMessage::TranscribeFile {
-                id: chunk_job_id,
-                file: path,
+                id: chunk_job_id.clone(),
+                file: path.clone(),
                 mode: "offline".into(),
             };
+            eprintln!("[recorder] sending TranscribeFile chunk_job_id={chunk_job_id} file={path}");
             if let Err(e) = worker_tx.lock().unwrap().send(msg) {
                 eprintln!("[recorder] relay send failed: {e}");
             }
 
             app.emit("recorder:chunk_ready", serde_json::json!({ "id": id, "index": index })).ok();
         }
-        RecorderEvent::RecordingStopped { id, duration } => {
+        RecorderEvent::RecordingStopped { id, file_path, duration } => {
+            eprintln!("[recorder] RecordingStopped job={id} duration={duration} file_path={file_path}");
             let chunks = {
                 let mut rc = recording_chunks.lock().unwrap();
                 let mut v = rc.remove(&id).unwrap_or_default();
@@ -312,28 +323,34 @@ fn handle_recorder_event(
                 v
             };
 
-            // Attempt ffmpeg concat when there are chunks; derive final_path or leave empty on failure
-            let final_path: String = chunks
-                .first()
-                .and_then(|(_, p)| std::path::Path::new(p).parent().map(|d| d.to_path_buf()))
-                .and_then(|dir| {
-                    let fp = dir.join("recording.mp4");
-                    let list_path = dir.join("concat_list.txt");
-                    let list_content: String = chunks
-                        .iter()
-                        .map(|(_, p)| format!("file '{}'\n", p.replace('\'', "'\\''")))
-                        .collect();
-                    let ok = std::fs::write(&list_path, &list_content).is_ok()
-                        && std::process::Command::new("ffmpeg")
-                            .args(["-y", "-f", "concat", "-safe", "0",
-                                   "-i", list_path.to_str()?,
-                                   "-c", "copy", fp.to_str()?])
-                            .status()
-                            .map(|s| s.success())
-                            .unwrap_or(false);
-                    ok.then(|| fp.to_string_lossy().into_owned())
-                })
-                .unwrap_or_default();
+            // If SCRecordingOutput already produced a complete video+audio file, use it directly.
+            // Otherwise, attempt ffmpeg concat of audio-only chunks.
+            let final_path: String = if !file_path.is_empty() {
+                eprintln!("[recorder] using SCRecordingOutput file: {file_path}");
+                file_path
+            } else {
+                chunks
+                    .first()
+                    .and_then(|(_, p)| std::path::Path::new(p).parent().map(|d| d.to_path_buf()))
+                    .and_then(|dir| {
+                        let fp = dir.join("recording.mp4");
+                        let list_path = dir.join("concat_list.txt");
+                        let list_content: String = chunks
+                            .iter()
+                            .map(|(_, p)| format!("file '{}'\n", p.replace('\'', "'\\''")))
+                            .collect();
+                        let ok = std::fs::write(&list_path, &list_content).is_ok()
+                            && std::process::Command::new("ffmpeg")
+                                .args(["-y", "-f", "concat", "-safe", "0",
+                                       "-i", list_path.to_str()?,
+                                       "-c", "copy", fp.to_str()?])
+                                .status()
+                                .map(|s| s.success())
+                                .unwrap_or(false);
+                        ok.then(|| fp.to_string_lossy().into_owned())
+                    })
+                    .unwrap_or_default()
+            };
 
             {
                 let db_lock = db.lock().unwrap();
@@ -347,9 +364,6 @@ fn handle_recorder_event(
                 "file_path": final_path,
                 "duration": duration,
             })).ok();
-
-            let prefix = format!("{id}:chunk:");
-            chunk_info.lock().unwrap().retain(|k, _| !k.starts_with(&prefix));
         }
         RecorderEvent::Error { id, message } => {
             eprintln!("[recorder] job={id} error={message}");
