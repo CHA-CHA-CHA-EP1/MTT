@@ -5,13 +5,12 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { useJobStore } from "./jobStore";
 import { useWorkerEvents } from "@/common/hooks/useWorkerEvents";
+import { useWhisperStore } from "@/lib/whisperConfig";
 import { ThemeToggle } from "@/common/components/ThemeToggle";
 import { formatTimestamp, formatDuration } from "@/lib/utils";
 import { WindowPickerModal } from "@/modules/recording/WindowPickerModal";
 import { useRecording } from "@/modules/recording/useRecording";
 import type { Job } from "@/lib/tauri";
-
-const WHISPER_MODEL = "mlx-community/whisper-large-v3-turbo";
 
 const statusIcon: Record<Job["status"], React.ReactNode> = {
   pending: <Clock className="h-4 w-4 text-muted-foreground" />,
@@ -35,6 +34,7 @@ export function LibraryPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const { jobs, loading, setActiveProject, create, cancel, remove, updateStatus } = useJobStore();
+  const whisperModel = useWhisperStore((s) => s.model);
   const [showWindowPicker, setShowWindowPicker] = useState(false);
 
   useEffect(() => {
@@ -71,7 +71,7 @@ export function LibraryPage() {
   const handleAdd = async () => {
     const selected = await open({ multiple: false, filters: [{ name: "Video", extensions: ["mp4", "mov", "mkv", "m4v", "avi"] }] });
     if (!selected || !projectId) return;
-    await create(projectId, selected as string, WHISPER_MODEL);
+    await create(projectId, selected as string, whisperModel);
   };
 
   return (

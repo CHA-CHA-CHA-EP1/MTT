@@ -7,6 +7,8 @@ use crate::error::AppError;
 const STORE_FILE: &str = "settings.json";
 const AI_CONFIG_KEY: &str = "ai_config";
 const SUMMARY_CONFIG_KEY: &str = "summary_config";
+const WHISPER_MODEL_KEY: &str = "whisper_model";
+const DEFAULT_WHISPER_MODEL: &str = "mlx-community/whisper-large-v3-turbo";
 
 const DEFAULT_PROMPT: &str = "Please summarize this meeting transcript. Include:\n1. Key discussion points\n2. Decisions made\n3. Action items with owners (if mentioned)\n\nBe concise and use the same language as the transcript.";
 
@@ -118,6 +120,23 @@ pub async fn list_ai_models(config: AiConfig) -> Result<Vec<String>, AppError> {
     }
 
     Err(AppError::Other(format!("unexpected response format: {}", body)))
+}
+
+#[tauri::command]
+pub fn get_whisper_model(app: AppHandle) -> Result<String, AppError> {
+    let store = app.store(STORE_FILE).map_err(|e| AppError::Other(e.to_string()))?;
+    Ok(store
+        .get(WHISPER_MODEL_KEY)
+        .and_then(|v| v.as_str().map(String::from))
+        .unwrap_or_else(|| DEFAULT_WHISPER_MODEL.to_string()))
+}
+
+#[tauri::command]
+pub fn save_whisper_model(app: AppHandle, model: String) -> Result<(), AppError> {
+    let store = app.store(STORE_FILE).map_err(|e| AppError::Other(e.to_string()))?;
+    store.set(WHISPER_MODEL_KEY, serde_json::Value::String(model));
+    store.save().map_err(|e| AppError::Other(e.to_string()))?;
+    Ok(())
 }
 
 #[tauri::command]

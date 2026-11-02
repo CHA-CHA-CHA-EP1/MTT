@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { X } from "lucide-react";
-import { AiConfig, AiProvider, PROVIDER_DEFAULTS, getAiConfig, listAiModels, saveAiConfig, testAiConnection } from "@/lib/tauri";
+import { X, Loader2, AlertCircle } from "lucide-react";
+import { listen } from "@tauri-apps/api/event";
+import { AiConfig, AiProvider, PROVIDER_DEFAULTS, getAiConfig, listAiModels, saveAiConfig, testAiConnection, initWorker } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
+import { WHISPER_MODELS, useWhisperStore } from "@/lib/whisperConfig";
 
 interface Props {
   open: boolean;
@@ -15,6 +17,10 @@ export function SettingsModal({ open, onClose }: Props) {
   const [apiKey, setApiKey] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [model, setModel] = useState(PROVIDER_DEFAULTS.anthropic.model);
+  const { model: whisperModel, save: saveWhisper } = useWhisperStore();
+  const [pendingWhisperModel, setPendingWhisperModel] = useState(whisperModel);
+  const [reloading, setReloading] = useState(false);
+  const [initError, setInitError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -23,6 +29,10 @@ export function SettingsModal({ open, onClose }: Props) {
   const [models, setModels] = useState<string[]>([]);
   const [fetchingModels, setFetchingModels] = useState(false);
   const overlayRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (open) setPendingWhisperModel(whisperModel);
+  }, [open, whisperModel]);
 
   useEffect(() => {
     if (!open) return;
@@ -97,6 +107,31 @@ export function SettingsModal({ open, onClose }: Props) {
     setTimeout(() => setSaved(false), 2000);
   };
 
+  const handleWhisperModelChange = async (newModel: string) => {
+    const previousModel = pendingWhisperModel;
+    setPendingWhisperModel(newModel);
+    setReloading(true);
+    setInitError(null);
+
+    // Listen for a global init error (id === "") before marking ready
+    const unlisten = await listen<{ id: string; message: string }>("worker:error", (ev) => {
+      if (ev.payload.id === "") {
+        setInitError(ev.payload.message);
+        setPendingWhisperModel(previousModel);    // revert UI
+        saveWhisper(previousModel);               // revert saved setting
+        setReloading(false);
+      }
+    });
+    const unlistenReady = await listen("worker:ready", () => {
+      setReloading(false);
+      unlisten();
+      unlistenReady();
+    });
+
+    await saveWhisper(newModel);
+    await initWorker(newModel);
+  };
+
   if (!open) return null;
 
   return (
@@ -111,6 +146,50 @@ export function SettingsModal({ open, onClose }: Props) {
           <button onClick={onClose} className="rounded p-1 text-muted-foreground hover:text-foreground">
             <X className="h-4 w-4" />
           </button>
+        </div>
+
+        {/* Transcription Model */}
+        <div className="mb-6">
+          <p className="mb-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">Transcription Model</p>
+          <div className="space-y-1.5">
+            {WHISPER_MODELS.map((m) => (
+              <button
+                key={m.id}
+                onClick={() => handleWhisperModelChange(m.id)}
+                disabled={reloading}
+                className={cn(
+                  "flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-left transition-colors disabled:opacity-60",
+                  pendingWhisperModel === m.id
+                    ? "border-foreground/40 bg-foreground/5"
+                    : "hover:bg-accent"
+                )}
+              >
+                <div>
+                  <p className="text-sm font-medium leading-tight">{m.label}</p>
+                  <p className="text-xs text-muted-foreground">{m.description}</p>
+                </div>
+                <div className="ml-3 shrink-0">
+                  {reloading && pendingWhisperModel === m.id ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                  ) : pendingWhisperModel === m.id ? (
+                    <span className="h-2 w-2 rounded-full bg-foreground block" />
+                  ) : null}
+                </div>
+              </button>
+            ))}
+          </div>
+          {reloading && (
+            <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Downloading &amp; loading model...
+            </p>
+          )}
+          {initError && (
+            <div className="mt-2 flex items-start gap-1.5 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" />
+              <span>{initError}</span>
+            </div>
+          )}
         </div>
 
         <p className="mb-4 text-xs font-medium uppercase tracking-widest text-muted-foreground">AI Provider</p>

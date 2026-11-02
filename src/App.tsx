@@ -3,12 +3,12 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { useTheme } from "@/common/hooks/useTheme";
 import { useWorkerEvents } from "@/common/hooks/useWorkerEvents";
+import { GlobalTranscriptionStatus } from "@/common/components/GlobalTranscriptionStatus";
 import { ProjectsPage } from "@/modules/projects/ProjectsPage";
 import { LibraryPage } from "@/modules/library/LibraryPage";
 import { TranscriptPage } from "@/modules/transcript/TranscriptPage";
 import { initWorker } from "@/lib/tauri";
-
-const WHISPER_MODEL = "mlx-community/whisper-large-v3-turbo";
+import { useWhisperStore } from "@/lib/whisperConfig";
 
 function ThemeProvider({ children }: { children: React.ReactNode }) {
   useTheme();
@@ -18,11 +18,12 @@ function ThemeProvider({ children }: { children: React.ReactNode }) {
 function WorkerBootstrap({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { load } = useWhisperStore();
 
   useWorkerEvents({ onReady: () => setReady(true) });
 
   useEffect(() => {
-    initWorker(WHISPER_MODEL).catch((e) => setError(String(e)));
+    load().then((model) => initWorker(model)).catch((e) => setError(String(e)));
   }, []);
 
   if (error) {
@@ -43,7 +44,12 @@ function WorkerBootstrap({ children }: { children: React.ReactNode }) {
     );
   }
 
-  return <>{children}</>;
+  return (
+    <>
+      {children}
+      <GlobalTranscriptionStatus />
+    </>
+  );
 }
 
 export default function App() {

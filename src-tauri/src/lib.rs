@@ -135,6 +135,8 @@ pub fn run() {
             commands::settings::save_summary_config,
             commands::settings::list_ai_models,
             commands::settings::test_ai_connection,
+            commands::settings::get_whisper_model,
+            commands::settings::save_whisper_model,
             commands::chat::chat_with_transcript,
             commands::summary::get_job_summary,
             commands::summary::generate_summary,
