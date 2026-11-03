@@ -4,5 +4,7 @@
 <dict>
     <key>NSScreenCaptureUsageDescription</key>
     <string>MTT needs screen recording permission to capture meeting windows for transcription.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>MTT captures your microphone so your voice is included in the meeting transcript.</string>
 </dict>
 </plist>

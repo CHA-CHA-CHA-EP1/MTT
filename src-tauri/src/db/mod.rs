@@ -23,6 +23,7 @@ pub fn new_pool(path: &str) -> Result<DbPool, DbError> {
         // migrations — ignore errors if column already exists
         conn.execute("ALTER TABLE jobs ADD COLUMN summary TEXT", []).ok();
         conn.execute("ALTER TABLE jobs ADD COLUMN recording_window TEXT", []).ok();
+        conn.execute("ALTER TABLE jobs ADD COLUMN error_message TEXT", []).ok();
         Ok(())
     });
     let pool = Pool::builder().max_size(5).build(manager)?;

@@ -10,9 +10,10 @@ use serde::{Deserialize, Serialize};
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum RecorderCommand {
     ListWindows,
-    Start { id: String, window_id: u32, chunk_duration: u32, output_dir: String },
+    Start { id: String, window_id: u32, chunk_duration: u32, output_dir: String, include_mic: bool, mic_device_label: String },
     Stop { id: String },
     Screenshot { window_id: u32 },
+    ToggleMic { enabled: bool },
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -31,6 +32,7 @@ pub enum RecorderEvent {
     RecordingStopped { id: String, file_path: String, duration: f64 },
     Screenshot { path: String },
     Error { id: String, message: String },
+    AudioLevel { id: String, system_level: f64, mic_level: f64 },
 }
 
 pub type RecorderHandler = Arc<dyn Fn(RecorderEvent) + Send + Sync>;

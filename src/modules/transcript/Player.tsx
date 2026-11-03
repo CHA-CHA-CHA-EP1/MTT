@@ -12,9 +12,14 @@ interface PlayerProps {
   onTimeUpdate: (t: number) => void;
   onSeek: (seek: (time: number) => void) => void;
   onEnded?: () => void;
+  // DVR mode: override duration display and progress calculation
+  totalDuration?: number;
+  chunkOffset?: number;
+  // DVR mode: called when user seeks via progress bar (absolute time)
+  onAbsoluteSeek?: (absoluteTime: number) => void;
 }
 
-export function Player({ src, onTimeUpdate, onSeek, onEnded }: PlayerProps) {
+export function Player({ src, onTimeUpdate, onSeek, onEnded, totalDuration, chunkOffset = 0, onAbsoluteSeek }: PlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
 
@@ -35,6 +40,20 @@ export function Player({ src, onTimeUpdate, onSeek, onEnded }: PlayerProps) {
       setCurrentTime(time);
     });
   }, [onSeek]);
+
+  // when src changes mid-playback (DVR chunk switch), resume playing
+  const wasPlayingRef = useRef(false);
+  useEffect(() => {
+    wasPlayingRef.current = playing;
+  }, [playing]);
+
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v || !src) return;
+    if (wasPlayingRef.current) {
+      v.play().catch(() => {});
+    }
+  }, [src]);
 
   const togglePlay = () => {
     const v = videoRef.current;
@@ -71,14 +90,22 @@ export function Player({ src, onTimeUpdate, onSeek, onEnded }: PlayerProps) {
     setShowSpeeds(false);
   };
 
+  const displayDuration = totalDuration ?? duration;
+  const absoluteTime = chunkOffset + currentTime;
+
   const seekFromEvent = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const bar = progressRef.current;
     const v = videoRef.current;
-    if (!bar || !v || !duration) return;
+    if (!bar || !displayDuration) return;
     const rect = bar.getBoundingClientRect();
     const ratio = Math.min(Math.max((e.clientX - rect.left) / rect.width, 0), 1);
-    v.currentTime = ratio * duration;
-  }, [duration]);
+    const targetAbsolute = ratio * displayDuration;
+    if (onAbsoluteSeek) {
+      onAbsoluteSeek(targetAbsolute);
+    } else if (v) {
+      v.currentTime = targetAbsolute;
+    }
+  }, [displayDuration, onAbsoluteSeek]);
 
   // keyboard shortcuts
   useEffect(() => {
@@ -93,7 +120,7 @@ export function Player({ src, onTimeUpdate, onSeek, onEnded }: PlayerProps) {
     return () => window.removeEventListener("keydown", handler);
   }, [playing, duration]);
 
-  const progress = duration ? (currentTime / duration) * 100 : 0;
+  const progress = displayDuration ? (absoluteTime / displayDuration) * 100 : 0;
 
   return (
     <div className="flex h-full flex-col bg-black">
@@ -158,7 +185,7 @@ export function Player({ src, onTimeUpdate, onSeek, onEnded }: PlayerProps) {
 
           {/* Time */}
           <span className="ml-1 text-xs tabular-nums text-white/70">
-            {formatDuration(currentTime)} / {formatDuration(duration)}
+            {formatDuration(absoluteTime)} / {formatDuration(displayDuration)}
           </span>
 
           <div className="flex-1" />

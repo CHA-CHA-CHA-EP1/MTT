@@ -22,6 +22,8 @@ pub fn start_recording(
     window_id: u32,
     window_title: String,
     whisper_model: String,
+    include_mic: bool,
+    mic_device_label: String,
 ) -> Result<String, AppError> {
     let recorder = state.recorder.as_ref().ok_or_else(|| AppError::Other("screen recorder not available".into()))?;
 
@@ -37,6 +39,7 @@ pub fn start_recording(
         whisper_model,
         created_at,
         recording_window: Some(window_title),
+        error_message: None,
     };
 
     {
@@ -49,6 +52,8 @@ pub fn start_recording(
         window_id,
         chunk_duration: 30,
         output_dir: output_dir.to_string_lossy().into_owned(),
+        include_mic,
+        mic_device_label,
     })?;
 
     Ok(id)
@@ -65,5 +70,13 @@ pub fn stop_recording(state: State<AppState>, id: String) -> Result<(), AppError
 pub fn capture_window_screenshot(state: State<AppState>, window_id: u32) -> Result<(), AppError> {
     let recorder = state.recorder.as_ref().ok_or_else(|| AppError::Other("screen recorder not available".into()))?;
     recorder.send(&RecorderCommand::Screenshot { window_id })?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn toggle_mic(state: State<AppState>, id: String, enabled: bool) -> Result<(), AppError> {
+    let recorder = state.recorder.as_ref().ok_or_else(|| AppError::Other("screen recorder not available".into()))?;
+    let _ = id; // reserved for future per-job targeting
+    recorder.send(&RecorderCommand::ToggleMic { enabled })?;
     Ok(())
 }

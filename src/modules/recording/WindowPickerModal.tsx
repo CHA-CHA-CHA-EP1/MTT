@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { Monitor, Loader2, X, ArrowLeft } from "lucide-react";
+import { Monitor, Loader2, X, ArrowLeft, Mic } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { WindowInfo } from "@/lib/tauri";
+import type { WindowInfo, MicOptions } from "@/lib/tauri";
 import { listWindows, captureWindowScreenshot } from "@/lib/tauri";
 
 interface Props {
-  onSelect: (window: WindowInfo) => void;
+  onSelect: (window: WindowInfo, micOptions: MicOptions) => void;
   onClose: () => void;
 }
 
@@ -24,6 +24,73 @@ export function WindowPickerModal({ onSelect, onClose }: Props) {
   const [previewSrc, setPreviewSrc] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const unlistenRef = useRef<(() => void) | null>(null);
+
+  // Mic state
+  const [micEnabled, setMicEnabled] = useState(false);
+  const [micDevices, setMicDevices] = useState<MediaDeviceInfo[]>([]);
+  const [micDeviceId, setMicDeviceId] = useState<string>("");
+  const [micLevel, setMicLevel] = useState(0);
+
+  // Enumerate mic devices on mount (need getUserMedia first for labels)
+  useEffect(() => {
+    navigator.mediaDevices
+      .getUserMedia({ audio: true })
+      .then(() => navigator.mediaDevices.enumerateDevices())
+      .then((devices) => {
+        const inputs = devices.filter((d) => d.kind === "audioinput");
+        setMicDevices(inputs);
+        if (inputs.length > 0) setMicDeviceId(inputs[0].deviceId);
+      })
+      .catch(() => {
+        // Ignore permission errors — mic toggle will still work, just no level meter
+      });
+  }, []);
+
+  // Level meter effect — runs when in preview step and mic is enabled
+  useEffect(() => {
+    if (step !== "preview" || !micEnabled) {
+      setMicLevel(0);
+      return;
+    }
+
+    let animFrame: number;
+    let stream: MediaStream | null = null;
+    let ctx: AudioContext | null = null;
+
+    const setup = async () => {
+      try {
+        const constraints: MediaStreamConstraints = {
+          audio: micDeviceId ? { deviceId: { exact: micDeviceId } } : true,
+        };
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+        ctx = new AudioContext();
+        const source = ctx.createMediaStreamSource(stream);
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 256;
+        source.connect(analyser);
+        const data = new Uint8Array(analyser.frequencyBinCount);
+
+        const tick = () => {
+          analyser.getByteFrequencyData(data);
+          const avg = data.reduce((a, b) => a + b, 0) / data.length;
+          setMicLevel(avg / 255);
+          animFrame = requestAnimationFrame(tick);
+        };
+        animFrame = requestAnimationFrame(tick);
+      } catch {
+        // mic unavailable — ignore
+      }
+    };
+
+    setup();
+
+    return () => {
+      cancelAnimationFrame(animFrame);
+      stream?.getTracks().forEach((t) => t.stop());
+      ctx?.close();
+      setMicLevel(0);
+    };
+  }, [step, micEnabled, micDeviceId]);
 
   useEffect(() => {
     let unlistenFn: (() => void) | null = null;
@@ -190,6 +257,60 @@ export function WindowPickerModal({ onSelect, onClose }: Props) {
                   <p className="text-xs text-muted-foreground">{previewWindow.app}</p>
                 </div>
               )}
+
+              {/* Mic settings panel */}
+              <div className="mt-3 rounded-lg border bg-muted/30 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Mic className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="text-xs font-medium">Microphone</span>
+                  </div>
+                  {/* Toggle */}
+                  <button
+                    onClick={() => setMicEnabled(v => !v)}
+                    className={cn(
+                      "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
+                      micEnabled ? "bg-primary" : "bg-muted"
+                    )}
+                  >
+                    <span className={cn(
+                      "inline-block h-3.5 w-3.5 translate-x-0.5 rounded-full bg-white shadow transition-transform",
+                      micEnabled && "translate-x-4"
+                    )} />
+                  </button>
+                </div>
+
+                {micEnabled && (
+                  <>
+                    {/* Device selector */}
+                    {micDevices.length > 1 && (
+                      <select
+                        value={micDeviceId}
+                        onChange={e => setMicDeviceId(e.target.value)}
+                        className="w-full rounded border bg-background px-2 py-1 text-xs text-foreground"
+                      >
+                        {micDevices.map(d => (
+                          <option key={d.deviceId} value={d.deviceId}>{d.label || "Microphone"}</option>
+                        ))}
+                      </select>
+                    )}
+
+                    {/* Level meter — 20 bars */}
+                    <div className="flex items-end gap-0.5 h-5">
+                      {Array.from({ length: 20 }, (_, i) => (
+                        <div
+                          key={i}
+                          className={cn(
+                            "flex-1 rounded-sm transition-all duration-75",
+                            micLevel * 20 > i ? "bg-green-500" : "bg-muted"
+                          )}
+                          style={{ height: `${Math.max(20, Math.min(100, 20 + (i < micLevel * 20 ? (i / 20) * 80 : 0)))}%` }}
+                        />
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
 
             <div className="flex items-center justify-end gap-2 border-t px-4 py-3">
@@ -200,7 +321,14 @@ export function WindowPickerModal({ onSelect, onClose }: Props) {
                 Back
               </button>
               <button
-                onClick={() => previewWindow && onSelect(previewWindow)}
+                onClick={() => {
+                  if (!previewWindow) return;
+                  const selectedDevice = micDevices.find(d => d.deviceId === micDeviceId);
+                  onSelect(previewWindow, {
+                    enabled: micEnabled,
+                    deviceLabel: selectedDevice?.label ?? "",
+                  });
+                }}
                 className="flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
               >
                 <span className="relative flex h-2 w-2">

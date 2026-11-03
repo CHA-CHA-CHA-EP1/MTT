@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { startRecording, stopRecording, type WindowInfo } from "@/lib/tauri";
+import { startRecording, stopRecording, type WindowInfo, type MicOptions } from "@/lib/tauri";
 import { useWhisperStore } from "@/lib/whisperConfig";
 
 interface RecordingState {
@@ -45,10 +45,10 @@ export function useRecording(projectId: string | undefined, onJobCreated: (jobId
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [state.jobId]);
 
-  const start = async (window: WindowInfo) => {
+  const start = async (window: WindowInfo, micOptions: MicOptions = { enabled: true, deviceLabel: "" }) => {
     if (!projectId) return;
     try {
-      const jobId = await startRecording(projectId, window.id, window.title, whisperModel);
+      const jobId = await startRecording(projectId, window.id, window.title, whisperModel, micOptions.enabled, micOptions.deviceLabel);
       setState({ jobId, elapsed: 0 });
       onJobCreated(jobId);
     } catch (e) {

@@ -1,14 +1,15 @@
 import { memo, forwardRef, useCallback, useEffect, useRef, useState, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Loader2, PanelRightClose, PanelRightOpen, Captions, CaptionsOff, Pencil, ScrollText, Copy, Check, Sparkles, Wand2, MessageSquare, Search, X, Square } from "lucide-react";
+import { ArrowLeft, Loader2, PanelRightClose, PanelRightOpen, Captions, CaptionsOff, Pencil, ScrollText, Copy, Check, Sparkles, Wand2, MessageSquare, Search, X, Square, AlertCircle, RefreshCw, Mic, MicOff, Monitor } from "lucide-react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useTranscriptStore } from "./transcriptStore";
 import { useWorkerEvents } from "@/common/hooks/useWorkerEvents";
 import { ThemeToggle } from "@/common/components/ThemeToggle";
 import { Player } from "./Player";
+import { DVRPlayer, DVRChunk } from "./DVRPlayer";
 import { cn, formatDuration } from "@/lib/utils";
-import { getJob, getAiConfig, updateSegment, searchSegmentsInJob, stopRecording, Segment } from "@/lib/tauri";
+import { getJob, getAiConfig, updateSegment, searchSegmentsInJob, stopRecording, cancelJob, retranscribeJob, toggleMic, Segment } from "@/lib/tauri";
 import { SummaryPanel } from "@/modules/summary/SummaryPanel";
 import { CorrectionPanel } from "@/modules/correction/CorrectionPanel";
 import { ChatPanel } from "@/modules/chat/ChatPanel";
@@ -138,12 +139,14 @@ export function TranscriptPage() {
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
   const [title, setTitle] = useState("Transcript");
   const [isLiveRecording, setIsLiveRecording] = useState(false);
+  const [micEnabled, setMicEnabled] = useState(true);
+  const [micLevel, setMicLevel] = useState(0);
+  const [systemLevel, setSystemLevel] = useState(0);
   const [isStopping, setIsStopping] = useState(false);
   const [recordingElapsed, setRecordingElapsed] = useState(0);
   const elapsedIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [isRefining, setIsRefining] = useState(false);
-  const [liveChunks, setLiveChunks] = useState<string[]>([]);
-  const [liveChunkIdx, setLiveChunkIdx] = useState(0);
+  const [liveChunks, setLiveChunks] = useState<DVRChunk[]>([]);
   const [splitPct, setSplitPct] = useState(50);
   const [panelOpen, setPanelOpen] = useState(true);
   const [ccEnabled, setCcEnabled] = useState(false);
@@ -160,11 +163,18 @@ export function TranscriptPage() {
   const [correctionOpen, setCorrectionOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [hasAiConfig, setHasAiConfig] = useState(false);
+  const [jobStatus, setJobStatus] = useState<string>("pending");
+  const [jobErrorMessage, setJobErrorMessage] = useState<string | null>(null);
+  const [retranscribeLang, setRetranscribeLang] = useState<"th" | "en" | "auto">("th");
+  const [isRetranscribing, setIsRetranscribing] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
 
   useEffect(() => {
     if (!jobId) return;
     load(jobId);
     getJob(jobId).then((job) => {
+      setJobStatus(job.status);
+      setJobErrorMessage(job.error_message ?? null);
       if (job.status === "recording") {
         setIsLiveRecording(true);
       } else if (job.status === "running") {
@@ -199,20 +209,35 @@ export function TranscriptPage() {
       setIsLiveRecording(false);
       setIsStopping(false);
       setLiveChunks([]);
-      setLiveChunkIdx(0);
+      setMicLevel(0);
+      setSystemLevel(0);
       if (ev.payload.file_path) setVideoSrc(convertFileSrc(ev.payload.file_path));
     });
     return () => { unlisten.then((fn) => fn()); };
   }, [jobId]);
 
+  // Listen for audio level updates during live recording
+  useEffect(() => {
+    if (!jobId) return;
+    const unlistenLevel = listen<{ id: string; system_level: number; mic_level: number }>(
+      "recorder:audio_level",
+      (ev) => {
+        if (ev.payload.id !== jobId) return;
+        setSystemLevel(ev.payload.system_level);
+        setMicLevel(ev.payload.mic_level);
+      }
+    );
+    return () => { unlistenLevel.then((fn) => fn()); };
+  }, [jobId]);
+
   // Collect chunk file paths during live recording for DVR playback
   useEffect(() => {
     if (!jobId) return;
-    const unlisten = listen<{ id: string; index: number; path: string }>("recorder:chunk_ready", (ev) => {
+    const unlisten = listen<{ id: string; index: number; path: string; offset: number }>("recorder:chunk_ready", (ev) => {
       if (ev.payload.id !== jobId) return;
       setLiveChunks((prev) => {
         const next = [...prev];
-        next[ev.payload.index] = convertFileSrc(ev.payload.path);
+        next[ev.payload.index] = { path: convertFileSrc(ev.payload.path), offset: ev.payload.offset };
         return next;
       });
     });
@@ -232,7 +257,25 @@ export function TranscriptPage() {
 
   useWorkerEvents({
     onChunk: ({ id }) => { if (id === jobId) appendNewSegments(); },
-    onDone: ({ id }) => { if (id === jobId) setIsRefining(false); },
+    onDone: ({ id }) => {
+      if (id !== jobId) return;
+      setIsRefining(false);
+      setIsRetranscribing(false);
+      setJobStatus("done");
+    },
+    onError: ({ id, message }) => {
+      if (id !== jobId) return;
+      setIsRefining(false);
+      setIsRetranscribing(false);
+      setJobStatus("error");
+      setJobErrorMessage(message);
+    },
+    onCancelled: ({ id }) => {
+      if (id !== jobId) return;
+      setIsCancelling(false);
+      setIsRetranscribing(false);
+      setJobStatus("cancelled");
+    },
   });
 
   useEffect(() => {
@@ -264,6 +307,36 @@ export function TranscriptPage() {
       stopRecording(jobId).catch(console.error);
     }
   }, [jobId, isStopping]);
+
+  const handleToggleMic = useCallback(async () => {
+    if (!jobId) return;
+    const next = !micEnabled;
+    setMicEnabled(next);
+    await toggleMic(jobId, next).catch(console.error);
+  }, [jobId, micEnabled]);
+
+  const handleCancel = useCallback(() => {
+    if (!jobId || isCancelling) return;
+    setIsCancelling(true);
+    cancelJob(jobId).catch(console.error);
+  }, [jobId, isCancelling]);
+
+  const handleRetranscribe = useCallback(async () => {
+    if (!jobId || isRetranscribing) return;
+    setIsRetranscribing(true);
+    setJobStatus("running");
+    setJobErrorMessage(null);
+    clearSegments();
+    setIsRefining(true);
+    try {
+      await retranscribeJob(jobId, retranscribeLang);
+    } catch (e) {
+      console.error(e);
+      setIsRetranscribing(false);
+      setIsRefining(false);
+      setJobStatus("error");
+    }
+  }, [jobId, isRetranscribing, retranscribeLang, clearSegments]);
 
   useEffect(() => {
     if (!searchQuery.trim() || !jobId) { setSearchResults([]); return; }
@@ -347,6 +420,41 @@ export function TranscriptPage() {
                 : <Square className="h-3.5 w-3.5 fill-current" />}
               {isStopping ? "Stopping..." : `Stop ${formatDuration(recordingElapsed)}`}
             </button>
+          )}
+          {jobStatus === "running" && !isLiveRecording && (
+            <button
+              onClick={handleCancel}
+              disabled={isCancelling}
+              className="flex items-center gap-1.5 rounded-lg border border-destructive/50 bg-destructive/10 px-2.5 py-1.5 text-xs font-medium text-destructive transition-colors hover:bg-destructive/20 disabled:opacity-50"
+            >
+              {isCancelling
+                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                : <X className="h-3.5 w-3.5" />}
+              {isCancelling ? "Cancelling..." : "Cancel"}
+            </button>
+          )}
+          {(jobStatus === "error" || jobStatus === "cancelled" || jobStatus === "done") && !isLiveRecording && (
+            <div className="flex items-center gap-1">
+              <select
+                value={retranscribeLang}
+                onChange={(e) => setRetranscribeLang(e.target.value as "th" | "en" | "auto")}
+                className="rounded border bg-background px-1.5 py-1 text-xs text-muted-foreground focus:outline-none"
+              >
+                <option value="th">Thai</option>
+                <option value="en">English</option>
+                <option value="auto">Auto</option>
+              </select>
+              <button
+                onClick={handleRetranscribe}
+                disabled={isRetranscribing}
+                className="flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors hover:bg-accent disabled:opacity-50"
+              >
+                {isRetranscribing
+                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  : <RefreshCw className="h-3.5 w-3.5" />}
+                {isRetranscribing ? "Transcribing..." : "Re-transcribe"}
+              </button>
+            </div>
           )}
           {/* CC config */}
           <div ref={ccMenuRef} className="relative">
@@ -471,25 +579,108 @@ export function TranscriptPage() {
                   : <Square className="h-4 w-4 fill-current" />}
                 {isStopping ? "Stopping..." : "Stop Recording"}
               </button>
+              {/* Audio level monitor */}
+              <div className="mt-4 flex flex-col gap-2 w-48">
+                {/* Mic */}
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleToggleMic}
+                    className={cn("rounded p-1 transition-colors", micEnabled ? "text-white/80 hover:text-white" : "text-white/30 hover:text-white/50")}
+                  >
+                    {micEnabled ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
+                  </button>
+                  <div className="flex h-2 flex-1 items-center gap-px">
+                    {Array.from({ length: 16 }, (_, i) => (
+                      <div
+                        key={i}
+                        className={cn(
+                          "flex-1 rounded-full transition-all duration-75",
+                          micEnabled && micLevel * 16 > i ? "bg-green-400" : "bg-white/20"
+                        )}
+                        style={{ height: micEnabled && micLevel * 16 > i ? "100%" : "35%" }}
+                      />
+                    ))}
+                  </div>
+                </div>
+                {/* System audio */}
+                <div className="flex items-center gap-2">
+                  <Monitor className="h-4 w-4 text-white/50" />
+                  <div className="flex h-2 flex-1 items-center gap-px">
+                    {Array.from({ length: 16 }, (_, i) => (
+                      <div
+                        key={i}
+                        className={cn(
+                          "flex-1 rounded-full transition-all duration-75",
+                          systemLevel * 16 > i ? "bg-blue-400" : "bg-white/20"
+                        )}
+                        style={{ height: systemLevel * 16 > i ? "100%" : "35%" }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
             </div>
           ) : (
-            <div className="relative flex flex-1 flex-col">
-              <Player
-                src={isLiveRecording ? (liveChunks[liveChunkIdx] ?? null) : videoSrc}
-                onTimeUpdate={setCurrentTime}
-                onSeek={handleSeekReady}
-                onEnded={isLiveRecording ? () => {
-                  if (liveChunkIdx < liveChunks.length - 1)
-                    setLiveChunkIdx((i) => i + 1);
-                } : undefined}
-              />
+            <div className="relative flex min-h-0 flex-1 flex-col">
+              {isLiveRecording ? (
+                <DVRPlayer
+                  chunks={liveChunks}
+                  chunkDuration={30}
+                  onTimeUpdate={setCurrentTime}
+                  onSeek={handleSeekReady}
+                />
+              ) : (
+                <Player
+                  src={videoSrc}
+                  onTimeUpdate={setCurrentTime}
+                  onSeek={handleSeekReady}
+                />
+              )}
               {isLiveRecording && (
-                <div className="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-1 backdrop-blur-sm">
-                  <span className="relative flex h-2 w-2">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
-                    <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
-                  </span>
-                  <span className="text-xs font-medium text-white">REC {formatDuration(recordingElapsed)}</span>
+                <div className="absolute left-3 top-3 flex flex-col gap-1.5 rounded-xl bg-black/70 px-3 py-2 backdrop-blur-sm">
+                  <div className="flex items-center gap-1.5">
+                    <span className="relative flex h-2 w-2">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
+                      <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
+                    </span>
+                    <span className="text-xs font-medium text-white">REC {formatDuration(recordingElapsed)}</span>
+                  </div>
+                  {/* Mic row */}
+                  <div className="flex items-center gap-1.5">
+                    <button onClick={handleToggleMic} className="text-white/70 hover:text-white">
+                      {micEnabled
+                        ? <Mic className="h-3 w-3" />
+                        : <MicOff className="h-3 w-3 text-white/30" />}
+                    </button>
+                    <div className="flex h-1.5 w-20 items-center gap-0.5">
+                      {Array.from({ length: 12 }, (_, i) => (
+                        <div
+                          key={i}
+                          className={cn(
+                            "flex-1 rounded-full transition-all duration-75",
+                            micEnabled && micLevel * 12 > i ? "bg-green-400" : "bg-white/20"
+                          )}
+                          style={{ height: micEnabled && micLevel * 12 > i ? "100%" : "40%" }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                  {/* System audio row */}
+                  <div className="flex items-center gap-1.5">
+                    <Monitor className="h-3 w-3 text-white/70" />
+                    <div className="flex h-1.5 w-20 items-center gap-0.5">
+                      {Array.from({ length: 12 }, (_, i) => (
+                        <div
+                          key={i}
+                          className={cn(
+                            "flex-1 rounded-full transition-all duration-75",
+                            systemLevel * 12 > i ? "bg-blue-400" : "bg-white/20"
+                          )}
+                          style={{ height: systemLevel * 12 > i ? "100%" : "40%" }}
+                        />
+                      ))}
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -599,6 +790,37 @@ export function TranscriptPage() {
               <div className="flex flex-1 flex-col items-center justify-center gap-3">
                 <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                 <p className="text-xs text-muted-foreground">Improving transcript quality...</p>
+              </div>
+            ) : jobStatus === "error" ? (
+              <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
+                <AlertCircle className="h-8 w-8 text-destructive/70" />
+                <div className="flex flex-col gap-1.5">
+                  <p className="text-sm font-medium text-destructive">Transcription failed</p>
+                  {jobErrorMessage && (
+                    <p className="max-w-sm text-xs text-muted-foreground break-all">{jobErrorMessage}</p>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={retranscribeLang}
+                    onChange={(e) => setRetranscribeLang(e.target.value as "th" | "en" | "auto")}
+                    className="rounded border bg-background px-2 py-1.5 text-xs text-muted-foreground focus:outline-none"
+                  >
+                    <option value="th">Thai</option>
+                    <option value="en">English</option>
+                    <option value="auto">Auto</option>
+                  </select>
+                  <button
+                    onClick={handleRetranscribe}
+                    disabled={isRetranscribing}
+                    className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-accent disabled:opacity-50"
+                  >
+                    {isRetranscribing
+                      ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      : <RefreshCw className="h-3.5 w-3.5" />}
+                    {isRetranscribing ? "Transcribing..." : "Try again"}
+                  </button>
+                </div>
               </div>
             ) : fullView ? (
               <div className="flex-1 overflow-y-auto px-5 py-4 select-text">

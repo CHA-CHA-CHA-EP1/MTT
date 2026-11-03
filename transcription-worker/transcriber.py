@@ -92,6 +92,8 @@ def transcribe_file(
         yield TotalMessage(id=job_id, count=len(chunks))
 
         glossary = _glossary(language)
+        # None = auto-detect; "auto" is not a valid mlx_whisper language code
+        lang = None if language == "auto" else language
         tail = ""
         seg_count = 0
         corrected_up_to = 0
@@ -107,7 +109,7 @@ def transcribe_file(
             r = mlx_whisper.transcribe(
                 clip,
                 path_or_hf_repo=whisper_model_path,
-                language=language,
+                language=lang,
                 initial_prompt=prompt,
                 condition_on_previous_text=False,
             )
@@ -118,7 +120,7 @@ def transcribe_file(
                 r = mlx_whisper.transcribe(
                     clip,
                     path_or_hf_repo=whisper_model_path,
-                    language=language,
+                    language=lang,
                     initial_prompt=glossary,
                     condition_on_previous_text=False,
                     temperature=(0.2, 0.4, 0.6),

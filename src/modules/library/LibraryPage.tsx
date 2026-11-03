@@ -137,8 +137,8 @@ export function LibraryPage() {
 
                   <button
                     className="flex flex-1 flex-col items-start gap-0.5 text-left"
-                    onClick={() => (job.status === "done" || job.status === "running") && navigate(`/projects/${projectId}/jobs/${job.id}`)}
-                    disabled={job.status === "pending" || job.status === "error" || job.status === "cancelled" || job.status === "recording"}
+                    onClick={() => job.status !== "pending" && job.status !== "recording" && navigate(`/projects/${projectId}/jobs/${job.id}`)}
+                    disabled={job.status === "pending" || job.status === "recording"}
                   >
                     <span className="text-sm font-medium leading-tight">
                       {job.recording_window ?? job.file_path.split("/").pop()}
@@ -185,9 +185,9 @@ export function LibraryPage() {
 
       {showWindowPicker && (
         <WindowPickerModal
-          onSelect={async (win) => {
+          onSelect={async (win, micOptions) => {
             setShowWindowPicker(false);
-            await start(win);
+            await start(win, micOptions);
           }}
           onClose={() => setShowWindowPicker(false)}
         />

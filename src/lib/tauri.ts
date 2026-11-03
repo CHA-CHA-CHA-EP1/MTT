@@ -14,6 +14,7 @@ export interface Job {
   whisper_model: string;
   created_at: number;
   recording_window?: string | null;
+  error_message?: string | null;
 }
 
 export interface Segment {
@@ -52,6 +53,9 @@ export const createJob = (projectId: string, filePath: string, whisperModel: str
 
 export const cancelJob = (id: string) =>
   invoke<void>("cancel_job", { id });
+
+export const retranscribeJob = (id: string, language: string) =>
+  invoke<void>("retranscribe_job", { id, language });
 
 export const deleteJob = (id: string) =>
   invoke<void>("delete_job", { id });
@@ -146,6 +150,11 @@ export interface WindowInfo {
   app: string;
 }
 
+export interface MicOptions {
+  enabled: boolean;
+  deviceLabel: string;
+}
+
 export const listWindows = () =>
   invoke<void>("list_windows");
 
@@ -154,13 +163,18 @@ export const startRecording = (
   windowId: number,
   windowTitle: string,
   whisperModel: string,
-) => invoke<string>("start_recording", { projectId, windowId, windowTitle, whisperModel });
+  includeMic: boolean,
+  micDeviceLabel: string,
+) => invoke<string>("start_recording", { projectId, windowId, windowTitle, whisperModel, includeMic, micDeviceLabel });
 
 export const stopRecording = (id: string) =>
   invoke<void>("stop_recording", { id });
 
 export const captureWindowScreenshot = (windowId: number) =>
   invoke<void>("capture_window_screenshot", { windowId });
+
+export const toggleMic = (id: string, enabled: boolean) =>
+  invoke<void>("toggle_mic", { id, enabled });
 
 // Chat
 export interface ChatMessage { role: "user" | "assistant"; content: string; }

@@ -15,13 +15,14 @@ if #available(macOS 13.0, *) {
             case .listWindows:
                 await listWindows()
 
-            case .start(let id, let windowId, let chunkDuration, let outputDir):
+            case .start(let id, let windowId, let chunkDuration, let outputDir, let includeMic, let micDeviceLabel):
                 let rec = Recorder()
                 recorder = rec
                 startTask = Task {
                     await rec.start(
                         jobId: id, windowId: windowId,
-                        chunkDuration: chunkDuration, outputDir: outputDir)
+                        chunkDuration: chunkDuration, outputDir: outputDir,
+                        includeMic: includeMic, micDeviceLabel: micDeviceLabel)
                 }
 
             case .screenshot(let windowId):
@@ -29,6 +30,11 @@ if #available(macOS 13.0, *) {
                     emitScreenshot(path: path)
                 } else {
                     emitError(id: "", message: "Failed to capture screenshot for window \(windowId)")
+                }
+
+            case .toggleMic(let enabled):
+                if let rec = recorder {
+                    await rec.toggleMic(enabled: enabled)
                 }
 
             case .stop(let id):

@@ -35,6 +35,12 @@ pub fn run() {
             // Clean up orphaned tmp recording dirs on startup.
             cleanup_orphaned_tmp(&db);
 
+            // Reset jobs interrupted by force-quit or crash so they show
+            // as re-transcribable instead of spinning forever.
+            if let Ok(conn) = db.get() {
+                queries::reset_interrupted_jobs(&conn).ok();
+            }
+
             let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                 .parent()
                 .expect("repo root");
@@ -121,6 +127,7 @@ pub fn run() {
             commands::jobs::init_worker,
             commands::jobs::create_job,
             commands::jobs::cancel_job,
+            commands::jobs::retranscribe_job,
             commands::jobs::delete_job,
             commands::jobs::list_jobs_by_project,
             commands::jobs::get_job,
@@ -146,6 +153,7 @@ pub fn run() {
             commands::recording::start_recording,
             commands::recording::stop_recording,
             commands::recording::capture_window_screenshot,
+            commands::recording::toggle_mic,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -264,7 +272,7 @@ fn handle_worker_message(
         OutgoingMessage::Error { id, message } => {
             eprintln!("[worker] Error id={id} message={message}");
             if let Ok(conn) = db.get() {
-                queries::update_job_status(&conn, id, "error").ok();
+                queries::set_job_error(&conn, id, message).ok();
             }
             app.emit("worker:error", serde_json::json!({ "id": id, "message": message })).ok();
         }
@@ -274,6 +282,46 @@ fn handle_worker_message(
             }
             app.emit("worker:cancelled", serde_json::json!({ "id": id })).ok();
         }
+    }
+}
+
+/// Mix mic.caf (microphone) into the recording using ffmpeg amix.
+/// Returns the mixed file path, or the original if no mic file exists / mix fails.
+fn mix_mic_if_available(recording_path: &str) -> String {
+    if recording_path.is_empty() { return recording_path.to_owned(); }
+
+    let recording = std::path::Path::new(recording_path);
+    let dir = match recording.parent() {
+        Some(d) => d,
+        None => return recording_path.to_owned(),
+    };
+    let mic_path = dir.join("mic.caf");
+    if !mic_path.exists() {
+        return recording_path.to_owned();
+    }
+
+    let mixed = dir.join("recording_mixed.mp4");
+    let ok = std::process::Command::new("ffmpeg")
+        .args([
+            "-y",
+            "-i", recording_path,
+            "-i", mic_path.to_str().unwrap_or_default(),
+            "-filter_complex", "[0:a][1:a]amix=inputs=2:duration=first:normalize=1[aout]",
+            "-map", "0:v?",
+            "-map", "[aout]",
+            "-c:v", "copy",
+            mixed.to_str().unwrap_or_default(),
+        ])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+
+    if ok {
+        eprintln!("[recorder] mic mixed → {}", mixed.display());
+        mixed.to_string_lossy().into_owned()
+    } else {
+        eprintln!("[recorder] mic mix failed, using original");
+        recording_path.to_owned()
     }
 }
 
@@ -302,11 +350,11 @@ fn handle_recorder_event(
             }
             app.emit("worker:chunk", serde_json::json!({ "id": id })).ok();
         }
-        RecorderEvent::ChunkReady { id, path, offset: _, index } => {
-            eprintln!("[recorder] ChunkReady job={id} index={index}");
+        RecorderEvent::ChunkReady { id, path, offset, index } => {
+            eprintln!("[recorder] ChunkReady job={id} index={index} offset={offset}");
             recording_chunks.lock().unwrap()
                 .entry(id.clone()).or_default().push((index, path.clone()));
-            app.emit("recorder:chunk_ready", serde_json::json!({ "id": id, "index": index, "path": path })).ok();
+            app.emit("recorder:chunk_ready", serde_json::json!({ "id": id, "index": index, "path": path, "offset": offset })).ok();
         }
         RecorderEvent::RecordingStopped { id, file_path, duration } => {
             eprintln!("[recorder] RecordingStopped job={id} duration={duration}");
@@ -344,9 +392,14 @@ fn handle_recorder_event(
                     .unwrap_or_default()
             };
 
+            // Mix microphone audio into the recording if mic.caf was captured.
+            // This gives Whisper both system audio (participants) and mic (us) in one pass.
+            let transcribe_path = mix_mic_if_available(&final_path);
+
             if let Ok(conn) = db.get() {
-                if !final_path.is_empty() {
-                    queries::update_job_file_path(&conn, &id, &final_path).ok();
+                let db_path = if !transcribe_path.is_empty() { &transcribe_path } else { &final_path };
+                if !db_path.is_empty() {
+                    queries::update_job_file_path(&conn, &id, db_path).ok();
                 }
                 queries::update_job_status(&conn, &id, "running").ok();
             }
@@ -358,7 +411,7 @@ fn handle_recorder_event(
             })).ok();
 
             // Start Pass 2 immediately — no chunk transcription to wait for
-            start_pass2(app, db, &id, &final_path);
+            start_pass2(app, db, &id, &transcribe_path);
         }
         RecorderEvent::Screenshot { path } => {
             app.emit("recorder:screenshot", serde_json::json!({ "path": path })).ok();
@@ -368,6 +421,11 @@ fn handle_recorder_event(
             // Don't set job status to error for non-fatal recorder errors (e.g. chunk write failures).
             // The recording may still complete via SCRecordingOutput.
             app.emit("recorder:error", serde_json::json!({ "id": id, "message": message })).ok();
+        }
+        RecorderEvent::AudioLevel { id, system_level, mic_level } => {
+            app.emit("recorder:audio_level", serde_json::json!({
+                "id": id, "system_level": system_level, "mic_level": mic_level
+            })).ok();
         }
     }
 }

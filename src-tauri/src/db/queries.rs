@@ -19,6 +19,7 @@ pub struct Job {
     pub whisper_model: String,
     pub created_at: i64,
     pub recording_window: Option<String>,
+    pub error_message: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -99,9 +100,29 @@ pub fn update_job_status(conn: &Connection, id: &str, status: &str) -> Result<()
     Ok(())
 }
 
+pub fn set_job_error(conn: &Connection, id: &str, message: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE jobs SET status = 'error', error_message = ?1 WHERE id = ?2",
+        params![message, id],
+    )?;
+    Ok(())
+}
+
+/// On app startup, any job still in 'running' or 'pending' means the worker
+/// was killed mid-transcription (force-quit, crash). Reset them to 'error'
+/// so the user can re-transcribe instead of seeing an infinite spinner.
+pub fn reset_interrupted_jobs(conn: &Connection) -> Result<()> {
+    conn.execute(
+        "UPDATE jobs SET status = 'error', error_message = 'Transcription was interrupted (app closed). Click Re-transcribe to try again.'
+         WHERE status IN ('running', 'pending')",
+        [],
+    )?;
+    Ok(())
+}
+
 pub fn get_job(conn: &Connection, id: &str) -> Result<Option<Job>> {
     let mut stmt = conn.prepare(
-        "SELECT id, project_id, file_path, status, whisper_model, created_at, recording_window FROM jobs WHERE id = ?1",
+        "SELECT id, project_id, file_path, status, whisper_model, created_at, recording_window, error_message FROM jobs WHERE id = ?1",
     )?;
     let mut rows = stmt.query(params![id])?;
     if let Some(row) = rows.next()? {
@@ -113,6 +134,7 @@ pub fn get_job(conn: &Connection, id: &str) -> Result<Option<Job>> {
             whisper_model: row.get(4)?,
             created_at: row.get(5)?,
             recording_window: row.get(6)?,
+            error_message: row.get(7)?,
         }))
     } else {
         Ok(None)
@@ -126,7 +148,7 @@ pub fn update_job_file_path(conn: &Connection, id: &str, file_path: &str) -> Res
 
 pub fn list_jobs_by_project(conn: &Connection, project_id: &str) -> Result<Vec<Job>> {
     let mut stmt = conn.prepare(
-        "SELECT id, project_id, file_path, status, whisper_model, created_at, recording_window
+        "SELECT id, project_id, file_path, status, whisper_model, created_at, recording_window, error_message
          FROM jobs WHERE project_id = ?1 ORDER BY created_at DESC",
     )?;
     let rows = stmt.query_map(params![project_id], |row| {
@@ -138,6 +160,7 @@ pub fn list_jobs_by_project(conn: &Connection, project_id: &str) -> Result<Vec<J
             whisper_model: row.get(4)?,
             created_at: row.get(5)?,
             recording_window: row.get(6)?,
+            error_message: row.get(7)?,
         })
     })?;
     rows.collect()
@@ -324,6 +347,7 @@ mod tests {
             whisper_model: "large-v3".into(),
             created_at: 1000,
             recording_window: None,
+            error_message: None,
         }
     }
 

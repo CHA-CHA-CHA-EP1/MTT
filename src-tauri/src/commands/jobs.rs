@@ -35,6 +35,7 @@ pub fn create_job(
         whisper_model: whisper_model.clone(),
         created_at,
         recording_window: None,
+        error_message: None,
     };
 
     {
@@ -55,6 +56,35 @@ pub fn create_job(
 #[tauri::command]
 pub fn cancel_job(state: State<AppState>, id: String) -> Result<(), AppError> {
     state.worker.send(&IncomingMessage::Cancel { id })?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn retranscribe_job(
+    state: State<AppState>,
+    id: String,
+    language: String,
+) -> Result<(), AppError> {
+    let file_path = {
+        let conn = state.db.get()?;
+        queries::get_job(&conn, &id)?
+            .ok_or(AppError::NotFound)?
+            .file_path
+    };
+    {
+        let conn = state.db.get()?;
+        queries::delete_segments_for_job(&conn, &id)?;
+        conn.execute(
+            "UPDATE jobs SET status = 'running', error_message = NULL WHERE id = ?1",
+            rusqlite::params![id],
+        )?;
+    }
+    state.worker.send(&IncomingMessage::TranscribeFile {
+        id,
+        file: file_path,
+        mode: "offline".into(),
+        language,
+    })?;
     Ok(())
 }
 
