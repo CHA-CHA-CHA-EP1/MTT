@@ -419,7 +419,7 @@ export function TranscriptPage({ jobId: jobIdProp }: TranscriptPageProps = {}) {
           </div>
         </div>
         <div className="flex items-center gap-1">
-          {isLiveRecording && (
+          {!isEmbedded && isLiveRecording && (
             <button
               onClick={handleStopRecording}
               disabled={isStopping}

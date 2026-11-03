@@ -40,6 +40,7 @@ pub fn start_recording(
         created_at,
         recording_window: Some(window_title),
         error_message: None,
+        title: None,
     };
 
     {

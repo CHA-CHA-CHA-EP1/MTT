@@ -14,6 +14,7 @@ import { useWhisperStore } from "@/lib/whisperConfig";
 import { useRecording } from "@/modules/recording/useRecording";
 import { WindowPickerModal } from "@/modules/recording/WindowPickerModal";
 import * as api from "@/lib/tauri";
+import { renameMeeting } from "@/lib/tauri";
 import type { Job } from "@/lib/tauri";
 import { cn, formatDuration } from "@/lib/utils";
 
@@ -41,7 +42,7 @@ interface SidebarProps {
 
 export function Sidebar({ spaceId, selectedJobId, onSelectJob }: SidebarProps) {
   const navigate = useNavigate();
-  const { jobs, loading: jobsLoading, setActiveSpace, updateStatus, remove } = useJobStore();
+  const { jobs, loading: jobsLoading, setActiveSpace, updateStatus, remove, updateTitle } = useJobStore();
   const { folders, loading: foldersLoading, setActiveSpace: setFolderSpace, create: createFolder, rename: renameFolder, remove: removeFolder } = useFolderStore();
   const whisperModel = useWhisperStore((s) => s.model);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
@@ -50,6 +51,8 @@ export function Sidebar({ spaceId, selectedJobId, onSelectJob }: SidebarProps) {
   const [newFolderName, setNewFolderName] = useState("");
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
   const [editFolderName, setEditFolderName] = useState("");
+  const [editingJobId, setEditingJobId] = useState<string | null>(null);
+  const [editJobTitle, setEditJobTitle] = useState("");
 
   useEffect(() => {
     setActiveSpace(spaceId);
@@ -111,7 +114,14 @@ export function Sidebar({ spaceId, selectedJobId, onSelectJob }: SidebarProps) {
     setEditingFolderId(null);
   };
 
-  const jobLabel = (job: Job) => job.recording_window ?? job.file_path.split("/").pop() ?? job.id;
+  const jobLabel = (job: Job) => job.title ?? job.recording_window ?? job.file_path.split("/").pop() ?? job.id;
+
+  const handleRenameJob = async (id: string) => {
+    const trimmed = editJobTitle.trim() || null;
+    await renameMeeting(id, trimmed);
+    updateTitle(id, trimmed);
+    setEditingJobId(null);
+  };
 
   const inboxJobs = jobs.filter(j => !j.folder_id);
   const jobsByFolder = (folderId: string) => jobs.filter(j => j.folder_id === folderId);
@@ -125,11 +135,36 @@ export function Sidebar({ spaceId, selectedJobId, onSelectJob }: SidebarProps) {
           : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
       )}
       onClick={() => {
+        if (editingJobId === job.id) return;
         if (job.status !== "pending" && job.status !== "recording") onSelectJob(job.id);
       }}
     >
       {job.recording_window ? <Monitor className="h-3 w-3 shrink-0" /> : <FileVideo className="h-3 w-3 shrink-0" />}
-      <span className="flex-1 truncate">{jobLabel(job)}</span>
+      {editingJobId === job.id ? (
+        <input
+          autoFocus
+          value={editJobTitle}
+          onChange={(e) => setEditJobTitle(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") handleRenameJob(job.id);
+            if (e.key === "Escape") setEditingJobId(null);
+          }}
+          onBlur={() => handleRenameJob(job.id)}
+          className="flex-1 rounded bg-background px-1 text-xs outline-none ring-1 ring-foreground/20"
+          onClick={(e) => e.stopPropagation()}
+        />
+      ) : (
+        <span
+          className="flex-1 truncate"
+          onDoubleClick={(e) => {
+            e.stopPropagation();
+            setEditingJobId(job.id);
+            setEditJobTitle(jobLabel(job));
+          }}
+        >
+          {jobLabel(job)}
+        </span>
+      )}
       <StatusIcon status={job.status} />
       <button
         onClick={(e) => { e.stopPropagation(); remove(job.id); }}

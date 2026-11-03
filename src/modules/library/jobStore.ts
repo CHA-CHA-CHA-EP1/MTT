@@ -16,6 +16,7 @@ interface JobStore {
   remove: (id: string) => Promise<void>;
   moveToFolder: (jobId: string, folderId: string | null) => Promise<void>;
   updateStatus: (id: string, status: Job["status"]) => void;
+  updateTitle: (id: string, title: string | null) => void;
 }
 
 export const useJobStore = create<JobStore>((set, get) => ({
@@ -76,6 +77,12 @@ export const useJobStore = create<JobStore>((set, get) => ({
         if (j.status === "recording" && status === "running") return j;
         return { ...j, status };
       }),
+    }));
+  },
+
+  updateTitle: (id, title) => {
+    set((s) => ({
+      jobs: s.jobs.map((j) => j.id === id ? { ...j, title } : j),
     }));
   },
 }));

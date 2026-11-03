@@ -139,6 +139,7 @@ pub fn run() {
             commands::jobs::list_jobs_by_space,
             commands::jobs::move_job_to_folder,
             commands::jobs::get_job,
+            commands::jobs::rename_meeting,
             commands::segments::get_segments,
             commands::segments::get_segments_since,
             commands::segments::search_segments,
@@ -273,10 +274,10 @@ fn cleanup_orphaned_tmp(db: &DbPool) {
 fn start_pass2(app: &tauri::AppHandle, db: &DbPool, job_id: &str, file_path: &str) {
     if file_path.is_empty() {
         if let Ok(conn) = db.get() {
-            queries::update_job_status(&conn, job_id, "done").ok();
+            queries::set_job_error(&conn, job_id, "No recording data captured. Recording may have been too short or failed to save.").ok();
         }
-        app.emit("worker:done", serde_json::json!({ "id": job_id })).ok();
-        eprintln!("[pass2] no file for job={job_id}, marking done");
+        app.emit("worker:error", serde_json::json!({ "id": job_id, "message": "No recording data captured" })).ok();
+        eprintln!("[pass2] no file for job={job_id}, marking error");
         return;
     }
 

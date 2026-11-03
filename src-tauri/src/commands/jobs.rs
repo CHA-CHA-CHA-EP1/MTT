@@ -36,6 +36,7 @@ pub fn create_job(
         created_at,
         recording_window: None,
         error_message: None,
+        title: None,
     };
 
     {
@@ -145,4 +146,10 @@ pub fn move_job_to_folder(
 pub fn get_job(state: State<AppState>, id: String) -> Result<Job, AppError> {
     let conn = state.db.get()?;
     queries::get_job(&conn, &id)?.ok_or(AppError::NotFound)
+}
+
+#[tauri::command]
+pub fn rename_meeting(state: State<AppState>, id: String, title: Option<String>) -> Result<(), AppError> {
+    let conn = state.db.get()?;
+    Ok(queries::update_job_title(&conn, &id, title.as_deref())?)
 }

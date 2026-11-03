@@ -35,6 +35,7 @@ pub struct Job {
     pub created_at: i64,
     pub recording_window: Option<String>,
     pub error_message: Option<String>,
+    pub title: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -214,7 +215,7 @@ pub fn reset_interrupted_jobs(conn: &Connection) -> Result<()> {
 
 pub fn get_job(conn: &Connection, id: &str) -> Result<Option<Job>> {
     let mut stmt = conn.prepare(
-        "SELECT id, project_id, file_path, status, whisper_model, created_at, recording_window, error_message FROM jobs WHERE id = ?1",
+        "SELECT id, project_id, file_path, status, whisper_model, created_at, recording_window, error_message, title FROM jobs WHERE id = ?1",
     )?;
     let mut rows = stmt.query(params![id])?;
     if let Some(row) = rows.next()? {
@@ -227,6 +228,7 @@ pub fn get_job(conn: &Connection, id: &str) -> Result<Option<Job>> {
             created_at: row.get(5)?,
             recording_window: row.get(6)?,
             error_message: row.get(7)?,
+            title: row.get(8)?,
         }))
     } else {
         Ok(None)
@@ -240,7 +242,7 @@ pub fn update_job_file_path(conn: &Connection, id: &str, file_path: &str) -> Res
 
 pub fn list_jobs_by_project(conn: &Connection, project_id: &str) -> Result<Vec<Job>> {
     let mut stmt = conn.prepare(
-        "SELECT id, project_id, file_path, status, whisper_model, created_at, recording_window, error_message
+        "SELECT id, project_id, file_path, status, whisper_model, created_at, recording_window, error_message, title
          FROM jobs WHERE project_id = ?1 ORDER BY created_at DESC",
     )?;
     let rows = stmt.query_map(params![project_id], |row| {
@@ -253,6 +255,7 @@ pub fn list_jobs_by_project(conn: &Connection, project_id: &str) -> Result<Vec<J
             created_at: row.get(5)?,
             recording_window: row.get(6)?,
             error_message: row.get(7)?,
+            title: row.get(8)?,
         })
     })?;
     rows.collect()
@@ -265,7 +268,7 @@ pub fn delete_job(conn: &Connection, id: &str) -> Result<()> {
 
 pub fn list_jobs_by_space(conn: &Connection, space_id: &str) -> Result<Vec<Job>> {
     let mut stmt = conn.prepare(
-        "SELECT id, project_id, file_path, status, whisper_model, created_at, recording_window, error_message
+        "SELECT id, project_id, file_path, status, whisper_model, created_at, recording_window, error_message, title
          FROM jobs WHERE space_id = ?1 ORDER BY created_at DESC",
     )?;
     let rows = stmt.query_map(params![space_id], |row| {
@@ -278,6 +281,7 @@ pub fn list_jobs_by_space(conn: &Connection, space_id: &str) -> Result<Vec<Job>>
             created_at: row.get(5)?,
             recording_window: row.get(6)?,
             error_message: row.get(7)?,
+            title: row.get(8)?,
         })
     })?;
     rows.collect()
@@ -285,6 +289,11 @@ pub fn list_jobs_by_space(conn: &Connection, space_id: &str) -> Result<Vec<Job>>
 
 pub fn move_job_to_folder(conn: &Connection, job_id: &str, folder_id: Option<&str>) -> Result<()> {
     conn.execute("UPDATE jobs SET folder_id = ?1 WHERE id = ?2", params![folder_id, job_id])?;
+    Ok(())
+}
+
+pub fn update_job_title(conn: &Connection, id: &str, title: Option<&str>) -> Result<()> {
+    conn.execute("UPDATE jobs SET title = ?1 WHERE id = ?2", params![title, id])?;
     Ok(())
 }
 
@@ -500,6 +509,7 @@ mod tests {
             created_at: 1000,
             recording_window: None,
             error_message: None,
+            title: None,
         }
     }
 

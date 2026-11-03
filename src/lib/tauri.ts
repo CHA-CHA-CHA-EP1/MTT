@@ -30,6 +30,7 @@ export interface Job {
   created_at: number;
   recording_window?: string | null;
   error_message?: string | null;
+  title?: string | null;
 }
 
 export interface Segment {
@@ -115,6 +116,9 @@ export const moveJobToFolder = (jobId: string, folderId: string | null) =>
 
 export const getJob = (id: string) =>
   invoke<Job>("get_job", { id });
+
+export const renameMeeting = (id: string, title: string | null) =>
+  invoke<void>("rename_meeting", { id, title });
 
 // Segments
 export const getSegments = (jobId: string) =>

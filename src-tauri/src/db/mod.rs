@@ -27,6 +27,7 @@ pub fn new_pool(path: &str) -> Result<DbPool, DbError> {
         // redesign migrations: spaces + folders
         conn.execute("ALTER TABLE jobs ADD COLUMN space_id TEXT", []).ok();
         conn.execute("ALTER TABLE jobs ADD COLUMN folder_id TEXT", []).ok();
+        conn.execute("ALTER TABLE jobs ADD COLUMN title TEXT", []).ok();
         // migrate existing projects → spaces (idempotent: INSERT OR IGNORE)
         conn.execute_batch(
             "INSERT OR IGNORE INTO spaces (id, name, created_at)
