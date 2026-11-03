@@ -36,6 +36,7 @@ pub fn create_job(
         created_at,
         recording_window: None,
         error_message: None,
+        title: None,
     };
 
     {
@@ -126,7 +127,29 @@ pub fn list_jobs_by_project(state: State<AppState>, project_id: String) -> Resul
 }
 
 #[tauri::command]
+pub fn list_jobs_by_space(state: State<AppState>, space_id: String) -> Result<Vec<Job>, AppError> {
+    let conn = state.db.get()?;
+    Ok(queries::list_jobs_by_space(&conn, &space_id)?)
+}
+
+#[tauri::command]
+pub fn move_job_to_folder(
+    state: State<AppState>,
+    job_id: String,
+    folder_id: Option<String>,
+) -> Result<(), AppError> {
+    let conn = state.db.get()?;
+    Ok(queries::move_job_to_folder(&conn, &job_id, folder_id.as_deref())?)
+}
+
+#[tauri::command]
 pub fn get_job(state: State<AppState>, id: String) -> Result<Job, AppError> {
     let conn = state.db.get()?;
     queries::get_job(&conn, &id)?.ok_or(AppError::NotFound)
+}
+
+#[tauri::command]
+pub fn rename_meeting(state: State<AppState>, id: String, title: Option<String>) -> Result<(), AppError> {
+    let conn = state.db.get()?;
+    Ok(queries::update_job_title(&conn, &id, title.as_deref())?)
 }

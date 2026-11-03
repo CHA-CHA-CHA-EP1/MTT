@@ -24,6 +24,16 @@ pub fn new_pool(path: &str) -> Result<DbPool, DbError> {
         conn.execute("ALTER TABLE jobs ADD COLUMN summary TEXT", []).ok();
         conn.execute("ALTER TABLE jobs ADD COLUMN recording_window TEXT", []).ok();
         conn.execute("ALTER TABLE jobs ADD COLUMN error_message TEXT", []).ok();
+        // redesign migrations: spaces + folders
+        conn.execute("ALTER TABLE jobs ADD COLUMN space_id TEXT", []).ok();
+        conn.execute("ALTER TABLE jobs ADD COLUMN folder_id TEXT", []).ok();
+        conn.execute("ALTER TABLE jobs ADD COLUMN title TEXT", []).ok();
+        // migrate existing projects → spaces (idempotent: INSERT OR IGNORE)
+        conn.execute_batch(
+            "INSERT OR IGNORE INTO spaces (id, name, created_at)
+             SELECT id, name, created_at FROM projects;
+             UPDATE jobs SET space_id = project_id WHERE space_id IS NULL;"
+        ).ok();
         Ok(())
     });
     let pool = Pool::builder().max_size(5).build(manager)?;

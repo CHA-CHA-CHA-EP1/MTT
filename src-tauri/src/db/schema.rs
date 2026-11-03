@@ -18,6 +18,26 @@ CREATE TABLE IF NOT EXISTS jobs (
     recording_window TEXT
 );
 
+CREATE TABLE IF NOT EXISTS spaces (
+    id         TEXT    PRIMARY KEY,
+    name       TEXT    NOT NULL,
+    created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS folders (
+    id         TEXT    PRIMARY KEY,
+    space_id   TEXT    NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+    name       TEXT    NOT NULL,
+    created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS recording_chunks (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id    TEXT    NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    chunk_idx INTEGER NOT NULL,
+    file_path TEXT    NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS segments (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     job_id         TEXT    NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
