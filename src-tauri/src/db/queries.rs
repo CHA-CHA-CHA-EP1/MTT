@@ -176,9 +176,9 @@ pub fn delete_folder(conn: &Connection, id: &str) -> Result<()> {
 
 pub fn insert_job(conn: &Connection, job: &Job) -> Result<()> {
     conn.execute(
-        "INSERT INTO jobs (id, project_id, file_path, status, whisper_model, created_at, recording_window)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        params![job.id, job.project_id, job.file_path, job.status, job.whisper_model, job.created_at, job.recording_window],
+        "INSERT INTO jobs (id, project_id, space_id, file_path, status, whisper_model, created_at, recording_window, title)
+         VALUES (?1, ?2, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![job.id, job.project_id, job.file_path, job.status, job.whisper_model, job.created_at, job.recording_window, job.title],
     )?;
     Ok(())
 }
