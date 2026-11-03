@@ -125,9 +125,15 @@ const SegmentItem = memo(
 
 // --- TranscriptPage ---
 
-export function TranscriptPage() {
-  const { projectId, jobId } = useParams<{ projectId: string; jobId: string }>();
+interface TranscriptPageProps {
+  jobId?: string;
+}
+
+export function TranscriptPage({ jobId: jobIdProp }: TranscriptPageProps = {}) {
+  const { projectId, jobId: jobIdParam } = useParams<{ projectId: string; jobId: string }>();
+  const jobId = jobIdProp ?? jobIdParam;
   const navigate = useNavigate();
+  const isEmbedded = !!jobIdProp;
   const { segments, loading, activeIdx, load, reload, appendNewSegments, clearSegments, setCurrentTime } = useTranscriptStore();
 
   const activeRef = useRef<HTMLLIElement>(null);
@@ -388,16 +394,20 @@ export function TranscriptPage() {
     : null;
 
   return (
-    <div className="flex h-screen flex-col bg-background">
+    <div className={cn("flex flex-col bg-background", isEmbedded ? "h-full" : "h-screen")}>
       <header className="flex items-center justify-between border-b px-4 py-2">
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => navigate(`/projects/${projectId}`)}
-            className="rounded p-1 text-muted-foreground hover:text-foreground"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </button>
-          <span className="text-xs text-muted-foreground/50">/</span>
+          {!isEmbedded && (
+            <>
+              <button
+                onClick={() => navigate(`/projects/${projectId}`)}
+                className="rounded p-1 text-muted-foreground hover:text-foreground"
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </button>
+              <span className="text-xs text-muted-foreground/50">/</span>
+            </>
+          )}
           <div className="flex items-center gap-2">
             {isLiveRecording && (
               <span className="relative flex h-2 w-2 shrink-0">
@@ -548,7 +558,7 @@ export function TranscriptPage() {
               ? <PanelRightClose className="h-4 w-4" />
               : <PanelRightOpen className="h-4 w-4" />}
           </button>
-          <ThemeToggle />
+          {!isEmbedded && <ThemeToggle />}
         </div>
       </header>
 

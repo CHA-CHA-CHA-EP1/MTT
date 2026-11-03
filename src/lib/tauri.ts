@@ -6,9 +6,24 @@ export interface Project {
   created_at: number;
 }
 
+export interface Space {
+  id: string;
+  name: string;
+  created_at: number;
+}
+
+export interface Folder {
+  id: string;
+  space_id: string;
+  name: string;
+  created_at: number;
+}
+
 export interface Job {
   id: string;
   project_id: string;
+  space_id?: string | null;
+  folder_id?: string | null;
   file_path: string;
   status: "pending" | "running" | "done" | "error" | "cancelled" | "recording";
   whisper_model: string;
@@ -44,6 +59,35 @@ export const renameProject = (id: string, name: string) =>
 export const deleteProject = (id: string) =>
   invoke<void>("delete_project", { id });
 
+// Spaces
+export const createSpace = (name: string) =>
+  invoke<string>("create_space", { name });
+
+export const listSpaces = () =>
+  invoke<Space[]>("list_spaces");
+
+export const getSpace = (id: string) =>
+  invoke<Space>("get_space", { id });
+
+export const renameSpace = (id: string, name: string) =>
+  invoke<void>("rename_space", { id, name });
+
+export const deleteSpace = (id: string) =>
+  invoke<void>("delete_space", { id });
+
+// Folders
+export const createFolder = (spaceId: string, name: string) =>
+  invoke<string>("create_folder", { spaceId, name });
+
+export const listFolders = (spaceId: string) =>
+  invoke<Folder[]>("list_folders", { spaceId });
+
+export const renameFolder = (id: string, name: string) =>
+  invoke<void>("rename_folder", { id, name });
+
+export const deleteFolder = (id: string) =>
+  invoke<void>("delete_folder", { id });
+
 // Jobs
 export const initWorker = (whisperModel: string) =>
   invoke<void>("init_worker", { whisperModel });
@@ -62,6 +106,12 @@ export const deleteJob = (id: string) =>
 
 export const listJobsByProject = (projectId: string) =>
   invoke<Job[]>("list_jobs_by_project", { projectId });
+
+export const listJobsBySpace = (spaceId: string) =>
+  invoke<Job[]>("list_jobs_by_space", { spaceId });
+
+export const moveJobToFolder = (jobId: string, folderId: string | null) =>
+  invoke<void>("move_job_to_folder", { jobId, folderId });
 
 export const getJob = (id: string) =>
   invoke<Job>("get_job", { id });
@@ -159,13 +209,13 @@ export const listWindows = () =>
   invoke<void>("list_windows");
 
 export const startRecording = (
-  projectId: string,
+  spaceId: string,
   windowId: number,
   windowTitle: string,
   whisperModel: string,
   includeMic: boolean,
   micDeviceLabel: string,
-) => invoke<string>("start_recording", { projectId, windowId, windowTitle, whisperModel, includeMic, micDeviceLabel });
+) => invoke<string>("start_recording", { spaceId, windowId, windowTitle, whisperModel, includeMic, micDeviceLabel });
 
 export const stopRecording = (id: string) =>
   invoke<void>("stop_recording", { id });

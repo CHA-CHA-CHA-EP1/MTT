@@ -14,6 +14,8 @@ use crate::state::AppState;
 use crate::worker::recorder::{RecorderEvent, RecorderWorker};
 use crate::worker::{protocol::OutgoingMessage, Worker};
 
+// recording_chunks HashMap removed — chunks are now persisted to DB
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -31,6 +33,11 @@ pub fn run() {
             std::fs::create_dir_all(db_path.parent().unwrap())?;
 
             let db = new_pool(db_path.to_str().unwrap())?;
+
+            // Recover recordings that were interrupted mid-capture (app crash).
+            // Must run before cleanup_orphaned_tmp so dirs are not deleted,
+            // and before reset_interrupted_jobs so file_path is set first.
+            recover_interrupted_recordings(&db);
 
             // Clean up orphaned tmp recording dirs on startup.
             cleanup_orphaned_tmp(&db);
@@ -61,9 +68,6 @@ pub fn run() {
                 }
             };
 
-            let recording_chunks: Arc<Mutex<HashMap<String, Vec<(u32, String)>>>> =
-                Arc::new(Mutex::new(HashMap::new()));
-
             let db_for_worker = db.clone();
             let app_handle_w = app_handle.clone();
 
@@ -83,18 +87,12 @@ pub fn run() {
 
             let recorder: Option<RecorderWorker> = if recorder_bin.exists() {
                 let db_for_rec = db.clone();
-                let recording_chunks_for_rec = Arc::clone(&recording_chunks);
                 let app_handle_rec = app_handle.clone();
 
                 match RecorderWorker::spawn(
                     recorder_bin.to_str().unwrap(),
                     Arc::new(move |ev| {
-                        handle_recorder_event(
-                            &app_handle_rec,
-                            &db_for_rec,
-                            &recording_chunks_for_rec,
-                            ev,
-                        );
+                        handle_recorder_event(&app_handle_rec, &db_for_rec, ev);
                     }),
                 ) {
                     Ok(rw) => Some(rw),
@@ -112,7 +110,6 @@ pub fn run() {
                 db,
                 worker,
                 recorder,
-                recording_chunks,
                 ai_cancels: Arc::new(Mutex::new(HashMap::new())),
             });
 
@@ -124,12 +121,23 @@ pub fn run() {
             commands::projects::get_project,
             commands::projects::rename_project,
             commands::projects::delete_project,
+            commands::spaces::create_space,
+            commands::spaces::list_spaces,
+            commands::spaces::get_space,
+            commands::spaces::rename_space,
+            commands::spaces::delete_space,
+            commands::folders::create_folder,
+            commands::folders::list_folders,
+            commands::folders::rename_folder,
+            commands::folders::delete_folder,
             commands::jobs::init_worker,
             commands::jobs::create_job,
             commands::jobs::cancel_job,
             commands::jobs::retranscribe_job,
             commands::jobs::delete_job,
             commands::jobs::list_jobs_by_project,
+            commands::jobs::list_jobs_by_space,
+            commands::jobs::move_job_to_folder,
             commands::jobs::get_job,
             commands::segments::get_segments,
             commands::segments::get_segments_since,
@@ -159,20 +167,79 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
-/// On startup, delete any dirs in the mtt tmp folder not referenced by a job in DB.
-fn cleanup_orphaned_tmp(db: &DbPool) {
-    let tmp_dir = std::env::temp_dir().join("mtt");
-    if !tmp_dir.exists() { return; }
-
-    let known_paths: std::collections::HashSet<String> = {
+/// On startup, attempt to recover recordings that were interrupted by a crash.
+/// For each job in "recording" status that has chunks in DB:
+///   1. concat chunks with ffmpeg → recording.mp4
+///   2. update job file_path so reset_interrupted_jobs leaves it re-transcribable
+fn recover_interrupted_recordings(db: &DbPool) {
+    let job_ids = {
         let conn = match db.get() {
             Ok(c) => c,
             Err(_) => return,
         };
-        match queries::list_all_job_file_paths(&conn) {
-            Ok(paths) => paths.into_iter().collect(),
-            Err(_) => return,
+        queries::jobs_with_pending_chunks(&conn).unwrap_or_default()
+    };
+
+    for job_id in job_ids {
+        let chunks = {
+            let conn = match db.get() { Ok(c) => c, Err(_) => continue };
+            let mut v = queries::get_recording_chunks(&conn, &job_id).unwrap_or_default();
+            v.sort_by_key(|(idx, _)| *idx);
+            v
+        };
+        if chunks.is_empty() { continue; }
+
+        let recovered = concat_chunks(&job_id, &chunks);
+
+        if let Some(path) = recovered {
+            let transcribe_path = mix_mic_if_available(&path);
+            if let Ok(conn) = db.get() {
+                queries::update_job_file_path(&conn, &job_id, &transcribe_path).ok();
+                queries::delete_recording_chunks(&conn, &job_id).ok();
+                eprintln!("[recovery] job={job_id} recovered → {transcribe_path}");
+            }
+        } else {
+            eprintln!("[recovery] job={job_id} chunk concat failed, will show as error");
         }
+    }
+}
+
+/// Concat a list of (chunk_idx, file_path) chunks into recording.mp4 using ffmpeg.
+fn concat_chunks(job_id: &str, chunks: &[(u32, String)]) -> Option<String> {
+    let dir = std::path::Path::new(&chunks[0].1).parent()?.to_path_buf();
+    let fp = dir.join("recording.mp4");
+    let list_path = dir.join("concat_list.txt");
+    let list_content: String = chunks
+        .iter()
+        .map(|(_, p)| format!("file '{}'\n", p.replace('\'', "'\\''")))
+        .collect();
+    let ok = std::fs::write(&list_path, &list_content).is_ok()
+        && std::process::Command::new("ffmpeg")
+            .args(["-y", "-f", "concat", "-safe", "0",
+                   "-i", list_path.to_str()?,
+                   "-c", "copy", fp.to_str()?])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+    eprintln!("[recovery] concat job={job_id} ok={ok}");
+    ok.then(|| fp.to_string_lossy().into_owned())
+}
+
+/// On startup, delete any dirs in the mtt tmp folder not referenced by a job in DB.
+/// Skips dirs that contain chunks for recoverable jobs.
+fn cleanup_orphaned_tmp(db: &DbPool) {
+    let tmp_dir = std::env::temp_dir().join("mtt");
+    if !tmp_dir.exists() { return; }
+
+    let (known_paths, chunk_job_ids): (std::collections::HashSet<String>, std::collections::HashSet<String>) = {
+        let conn = match db.get() {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        let paths = queries::list_all_job_file_paths(&conn).unwrap_or_default().into_iter().collect();
+        // Jobs that have chunks in DB should not have their dirs deleted
+        let chunk_jobs = queries::jobs_with_pending_chunks(&conn).unwrap_or_default().into_iter().collect();
+        (paths, chunk_jobs)
     };
 
     let entries = match std::fs::read_dir(&tmp_dir) {
@@ -183,10 +250,15 @@ fn cleanup_orphaned_tmp(db: &DbPool) {
     for entry in entries.flatten() {
         let dir = entry.path();
         if !dir.is_dir() { continue; }
+        let dir_name = dir.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
         let dir_str = dir.to_string_lossy();
+
         // Keep if any known job file_path is inside this dir
         let in_use = known_paths.iter().any(|p| p.starts_with(dir_str.as_ref()));
-        if !in_use {
+        // Keep if this dir belongs to a job with recoverable chunks
+        let has_chunks = chunk_job_ids.contains(&dir_name);
+
+        if !in_use && !has_chunks {
             if let Err(e) = std::fs::remove_dir_all(&dir) {
                 eprintln!("[cleanup] startup: failed to remove {}: {e}", dir.display());
             } else {
@@ -328,7 +400,6 @@ fn mix_mic_if_available(recording_path: &str) -> String {
 fn handle_recorder_event(
     app: &tauri::AppHandle,
     db: &DbPool,
-    recording_chunks: &Arc<Mutex<HashMap<String, Vec<(u32, String)>>>>,
     ev: RecorderEvent,
 ) {
     match ev {
@@ -352,16 +423,22 @@ fn handle_recorder_event(
         }
         RecorderEvent::ChunkReady { id, path, offset, index } => {
             eprintln!("[recorder] ChunkReady job={id} index={index} offset={offset}");
-            recording_chunks.lock().unwrap()
-                .entry(id.clone()).or_default().push((index, path.clone()));
+            if let Ok(conn) = db.get() {
+                queries::insert_recording_chunk(&conn, &id, index, &path).ok();
+            }
             app.emit("recorder:chunk_ready", serde_json::json!({ "id": id, "index": index, "path": path, "offset": offset })).ok();
         }
         RecorderEvent::RecordingStopped { id, file_path, duration } => {
             eprintln!("[recorder] RecordingStopped job={id} duration={duration}");
             let chunks = {
-                let mut rc = recording_chunks.lock().unwrap();
-                let mut v = rc.remove(&id).unwrap_or_default();
+                let conn = db.get().ok();
+                let mut v = conn.as_ref()
+                    .and_then(|c| queries::get_recording_chunks(c, &id).ok())
+                    .unwrap_or_default();
                 v.sort_by_key(|(idx, _)| *idx);
+                if let Some(c) = conn.as_ref() {
+                    queries::delete_recording_chunks(c, &id).ok();
+                }
                 v
             };
 
@@ -369,27 +446,7 @@ fn handle_recorder_event(
                 eprintln!("[recorder] using SCRecordingOutput file: {file_path}");
                 file_path
             } else {
-                chunks
-                    .first()
-                    .and_then(|(_, p)| std::path::Path::new(p).parent().map(|d| d.to_path_buf()))
-                    .and_then(|dir| {
-                        let fp = dir.join("recording.mp4");
-                        let list_path = dir.join("concat_list.txt");
-                        let list_content: String = chunks
-                            .iter()
-                            .map(|(_, p)| format!("file '{}'\n", p.replace('\'', "'\\''")))
-                            .collect();
-                        let ok = std::fs::write(&list_path, &list_content).is_ok()
-                            && std::process::Command::new("ffmpeg")
-                                .args(["-y", "-f", "concat", "-safe", "0",
-                                       "-i", list_path.to_str()?,
-                                       "-c", "copy", fp.to_str()?])
-                                .status()
-                                .map(|s| s.success())
-                                .unwrap_or(false);
-                        ok.then(|| fp.to_string_lossy().into_owned())
-                    })
-                    .unwrap_or_default()
+                concat_chunks(&id, &chunks).unwrap_or_default()
             };
 
             // Mix microphone audio into the recording if mic.caf was captured.

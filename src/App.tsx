@@ -7,6 +7,8 @@ import { GlobalTranscriptionStatus } from "@/common/components/GlobalTranscripti
 import { ProjectsPage } from "@/modules/projects/ProjectsPage";
 import { LibraryPage } from "@/modules/library/LibraryPage";
 import { TranscriptPage } from "@/modules/transcript/TranscriptPage";
+import { SpacePickerPage } from "@/modules/spaces/SpacePickerPage";
+import { AppShell } from "@/modules/shell/AppShell";
 import { initWorker } from "@/lib/tauri";
 import { useWhisperStore } from "@/lib/whisperConfig";
 
@@ -58,7 +60,12 @@ export default function App() {
       <WorkerBootstrap>
         <BrowserRouter>
           <Routes>
-            <Route path="/" element={<ProjectsPage />} />
+            {/* New IDE layout */}
+            <Route path="/" element={<SpacePickerPage />} />
+            <Route path="/spaces/:spaceId" element={<AppShell />} />
+            <Route path="/spaces/:spaceId/jobs/:jobId" element={<AppShell />} />
+            {/* Legacy routes — keep for backward compat */}
+            <Route path="/projects" element={<ProjectsPage />} />
             <Route path="/projects/:projectId" element={<LibraryPage />} />
             <Route path="/projects/:projectId/jobs/:jobId" element={<TranscriptPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />

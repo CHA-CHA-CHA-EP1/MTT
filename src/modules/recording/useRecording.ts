@@ -8,7 +8,7 @@ interface RecordingState {
   elapsed: number;
 }
 
-export function useRecording(projectId: string | undefined, onJobCreated: (jobId: string) => void) {
+export function useRecording(spaceId: string | undefined, onJobCreated: (jobId: string) => void) {
   const [state, setState] = useState<RecordingState>({ jobId: null, elapsed: 0 });
   const whisperModel = useWhisperStore((s) => s.model);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -46,9 +46,9 @@ export function useRecording(projectId: string | undefined, onJobCreated: (jobId
   }, [state.jobId]);
 
   const start = async (window: WindowInfo, micOptions: MicOptions = { enabled: true, deviceLabel: "" }) => {
-    if (!projectId) return;
+    if (!spaceId) return;
     try {
-      const jobId = await startRecording(projectId, window.id, window.title, whisperModel, micOptions.enabled, micOptions.deviceLabel);
+      const jobId = await startRecording(spaceId, window.id, window.title, whisperModel, micOptions.enabled, micOptions.deviceLabel);
       setState({ jobId, elapsed: 0 });
       onJobCreated(jobId);
     } catch (e) {

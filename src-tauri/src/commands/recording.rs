@@ -18,7 +18,7 @@ pub fn list_windows(state: State<AppState>) -> Result<(), AppError> {
 #[tauri::command]
 pub fn start_recording(
     state: State<AppState>,
-    project_id: String,
+    space_id: String,
     window_id: u32,
     window_title: String,
     whisper_model: String,
@@ -33,7 +33,7 @@ pub fn start_recording(
 
     let job = Job {
         id: id.clone(),
-        project_id,
+        project_id: space_id.clone(),
         file_path: String::new(),
         status: "recording".into(),
         whisper_model,
