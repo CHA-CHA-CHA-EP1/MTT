@@ -396,7 +396,7 @@ export function TranscriptPage({ jobId: jobIdProp }: TranscriptPageProps = {}) {
     : null;
 
   return (
-    <div className={cn("flex flex-col bg-background", isEmbedded ? "h-full" : "h-screen")}>
+    <div className={cn("flex flex-col bg-background", isEmbedded ? "flex-1 min-w-0 h-full" : "h-screen")}>
       <header className="flex items-center justify-between border-b px-4 py-2">
         <div className="flex items-center gap-2">
           {!isEmbedded && (
