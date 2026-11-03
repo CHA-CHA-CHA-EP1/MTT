@@ -44,13 +44,6 @@ pub fn create_job(
         queries::insert_job(&conn, &job)?;
     }
 
-    state.worker.send(&IncomingMessage::TranscribeFile {
-        id: id.clone(),
-        file: file_path,
-        mode: "offline".into(),
-        language: "th".into(),
-    })?;
-
     Ok(id)
 }
 

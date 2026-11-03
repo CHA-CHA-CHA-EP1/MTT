@@ -1,6 +1,6 @@
 import { memo, forwardRef, useCallback, useEffect, useRef, useState, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Loader2, PanelRightClose, PanelRightOpen, Captions, CaptionsOff, Pencil, ScrollText, Copy, Check, Sparkles, Wand2, MessageSquare, Search, X, Square, AlertCircle, RefreshCw, Mic, MicOff, Monitor } from "lucide-react";
+import { ArrowLeft, Loader2, PanelRightClose, PanelRightOpen, Captions, CaptionsOff, Pencil, ScrollText, Copy, Check, Sparkles, Wand2, MessageSquare, Search, X, Square, AlertCircle, RefreshCw, Mic, MicOff, Monitor, Play } from "lucide-react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useTranscriptStore } from "./transcriptStore";
@@ -151,6 +151,7 @@ export function TranscriptPage({ jobId: jobIdProp }: TranscriptPageProps = {}) {
   const [isStopping, setIsStopping] = useState(false);
   const [recordingElapsed, setRecordingElapsed] = useState(0);
   const elapsedIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastLevelRef = useRef(0);
   const [isRefining, setIsRefining] = useState(false);
   const [liveChunks, setLiveChunks] = useState<DVRChunk[]>([]);
   const [splitPct, setSplitPct] = useState(50);
@@ -189,7 +190,7 @@ export function TranscriptPage({ jobId: jobIdProp }: TranscriptPageProps = {}) {
       } else if (job.file_path) {
         setVideoSrc(convertFileSrc(job.file_path));
       }
-      setTitle(job.recording_window ?? job.file_path.split("/").pop() ?? "Transcript");
+      setTitle(job.title ?? job.recording_window ?? job.file_path.split("/").pop() ?? "Transcript");
     });
     getAiConfig().then((cfg) => setHasAiConfig(!!cfg?.api_key));
   }, [jobId]);
@@ -231,6 +232,9 @@ export function TranscriptPage({ jobId: jobIdProp }: TranscriptPageProps = {}) {
       "recorder:audio_level",
       (ev) => {
         if (ev.payload.id !== jobId) return;
+        const now = Date.now();
+        if (now - lastLevelRef.current < 66) return; // throttle ~15Hz
+        lastLevelRef.current = now;
         setSystemLevel(ev.payload.system_level);
         setMicLevel(ev.payload.mic_level);
       }
@@ -445,7 +449,7 @@ export function TranscriptPage({ jobId: jobIdProp }: TranscriptPageProps = {}) {
               {isCancelling ? "Cancelling..." : "Cancel"}
             </button>
           )}
-          {(jobStatus === "error" || jobStatus === "cancelled" || jobStatus === "done") && !isLiveRecording && (
+          {(jobStatus === "pending" || jobStatus === "error" || jobStatus === "cancelled" || jobStatus === "done") && !isLiveRecording && (
             <div className="flex items-center gap-1">
               <select
                 value={retranscribeLang}
@@ -463,8 +467,10 @@ export function TranscriptPage({ jobId: jobIdProp }: TranscriptPageProps = {}) {
               >
                 {isRetranscribing
                   ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  : <RefreshCw className="h-3.5 w-3.5" />}
-                {isRetranscribing ? "Transcribing..." : "Re-transcribe"}
+                  : jobStatus === "pending"
+                    ? <Play className="h-3.5 w-3.5" />
+                    : <RefreshCw className="h-3.5 w-3.5" />}
+                {isRetranscribing ? "Transcribing..." : jobStatus === "pending" ? "Transcribe" : "Re-transcribe"}
               </button>
             </div>
           )}

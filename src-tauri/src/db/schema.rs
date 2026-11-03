@@ -72,4 +72,10 @@ CREATE TRIGGER IF NOT EXISTS segments_ad AFTER DELETE ON segments BEGIN
     INSERT INTO segments_fts(segments_fts, rowid, text, corrected_text)
     VALUES ('delete', old.id, old.text, old.corrected_text);
 END;
+
+CREATE INDEX IF NOT EXISTS idx_jobs_space_id        ON jobs(space_id);
+CREATE INDEX IF NOT EXISTS idx_jobs_status          ON jobs(status);
+CREATE INDEX IF NOT EXISTS idx_segments_job_id      ON segments(job_id);
+CREATE INDEX IF NOT EXISTS idx_recording_chunks_job ON recording_chunks(job_id);
+CREATE INDEX IF NOT EXISTS idx_folders_space_id     ON folders(space_id);
 ";

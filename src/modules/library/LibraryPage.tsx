@@ -53,7 +53,7 @@ export function LibraryPage() {
     const unlisten = listen<{ id: string }>("recorder:stopped", (ev) => {
       // Status transitions to "running" (Transcribing...) — Rust will emit worker:done
       // via worker:done once all remaining chunks finish transcribing
-      updateStatus(ev.payload.id, "running");
+      updateStatus(ev.payload.id, "pending");
     });
     const unlistenErr = listen<{ id: string; message: string }>("recorder:error", (ev) => {
       if (ev.payload.id) updateStatus(ev.payload.id, "error");
@@ -137,8 +137,8 @@ export function LibraryPage() {
 
                   <button
                     className="flex flex-1 flex-col items-start gap-0.5 text-left"
-                    onClick={() => job.status !== "pending" && job.status !== "recording" && navigate(`/projects/${projectId}/jobs/${job.id}`)}
-                    disabled={job.status === "pending" || job.status === "recording"}
+                    onClick={() => job.status !== "recording" && navigate(`/projects/${projectId}/jobs/${job.id}`)}
+                    disabled={job.status === "recording"}
                   >
                     <span className="text-sm font-medium leading-tight">
                       {job.recording_window ?? job.file_path.split("/").pop()}

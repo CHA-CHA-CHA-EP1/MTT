@@ -16,7 +16,7 @@ import { WindowPickerModal } from "@/modules/recording/WindowPickerModal";
 import * as api from "@/lib/tauri";
 import { renameMeeting } from "@/lib/tauri";
 import type { Job } from "@/lib/tauri";
-import { cn, formatDuration } from "@/lib/utils";
+import { cn, formatDuration, formatTimestamp } from "@/lib/utils";
 
 const StatusIcon = ({ status }: { status: Job["status"] }) => {
   switch (status) {
@@ -42,7 +42,7 @@ interface SidebarProps {
 
 export function Sidebar({ spaceId, selectedJobId, onSelectJob }: SidebarProps) {
   const navigate = useNavigate();
-  const { jobs, loading: jobsLoading, setActiveSpace, updateStatus, remove, updateTitle } = useJobStore();
+  const { jobs, loading: jobsLoading, setActiveSpace, fetchBySpace, updateStatus, remove, updateTitle } = useJobStore();
   const { folders, loading: foldersLoading, setActiveSpace: setFolderSpace, create: createFolder, rename: renameFolder, remove: removeFolder } = useFolderStore();
   const whisperModel = useWhisperStore((s) => s.model);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
@@ -62,16 +62,20 @@ export function Sidebar({ spaceId, selectedJobId, onSelectJob }: SidebarProps) {
   // Listen for recording stopped to update job status in sidebar
   useEffect(() => {
     const unlisten = listen<{ id: string }>("recorder:stopped", (ev) => {
-      updateStatus(ev.payload.id, "running");
+      updateStatus(ev.payload.id, "pending");
     });
     const unlistenErr = listen<{ id: string }>("recorder:error", (ev) => {
       if (ev.payload.id) updateStatus(ev.payload.id, "error");
     });
+    const unlistenRecovery = listen("recovery:done", () => {
+      fetchBySpace(spaceId);
+    });
     return () => {
       unlisten.then(fn => fn());
       unlistenErr.then(fn => fn());
+      unlistenRecovery.then(fn => fn());
     };
-  }, []);
+  }, [spaceId]);
 
   useWorkerEvents({
     onDone: ({ id }) => updateStatus(id, "done"),
@@ -136,7 +140,7 @@ export function Sidebar({ spaceId, selectedJobId, onSelectJob }: SidebarProps) {
       )}
       onClick={() => {
         if (editingJobId === job.id) return;
-        if (job.status !== "pending" && job.status !== "recording") onSelectJob(job.id);
+        if (job.status !== "recording") onSelectJob(job.id);
       }}
     >
       {job.recording_window ? <Monitor className="h-3 w-3 shrink-0" /> : <FileVideo className="h-3 w-3 shrink-0" />}
@@ -154,16 +158,17 @@ export function Sidebar({ spaceId, selectedJobId, onSelectJob }: SidebarProps) {
           onClick={(e) => e.stopPropagation()}
         />
       ) : (
-        <span
-          className="flex-1 truncate"
+        <div
+          className="flex min-w-0 flex-1 flex-col"
           onDoubleClick={(e) => {
             e.stopPropagation();
             setEditingJobId(job.id);
             setEditJobTitle(jobLabel(job));
           }}
         >
-          {jobLabel(job)}
-        </span>
+          <span className="truncate">{jobLabel(job)}</span>
+          <span className="text-[10px] text-muted-foreground/60">{formatTimestamp(job.created_at)}</span>
+        </div>
       )}
       <StatusIcon status={job.status} />
       <button

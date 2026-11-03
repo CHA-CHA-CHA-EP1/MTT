@@ -34,18 +34,27 @@ pub fn run() {
 
             let db = new_pool(db_path.to_str().unwrap())?;
 
-            // Recover recordings that were interrupted mid-capture (app crash).
-            // Must run before cleanup_orphaned_tmp so dirs are not deleted,
-            // and before reset_interrupted_jobs so file_path is set first.
-            recover_interrupted_recordings(&db);
-
-            // Clean up orphaned tmp recording dirs on startup.
-            cleanup_orphaned_tmp(&db);
-
-            // Reset jobs interrupted by force-quit or crash so they show
-            // as re-transcribable instead of spinning forever.
-            if let Ok(conn) = db.get() {
-                queries::reset_interrupted_jobs(&conn).ok();
+            // Run recovery in background so app launches immediately.
+            // Order matters: recover → cleanup → reset_interrupted_jobs.
+            {
+                let job_ids = match db.get() {
+                    Ok(conn) => queries::jobs_with_pending_chunks(&conn).unwrap_or_default(),
+                    Err(_) => vec![],
+                };
+                let db_bg = db.clone();
+                let handle_bg = app_handle.clone();
+                std::thread::spawn(move || {
+                    let total = job_ids.len();
+                    if total > 0 {
+                        handle_bg.emit("recovery:start", total).ok();
+                        recover_interrupted_recordings(&db_bg, &job_ids, &handle_bg);
+                        handle_bg.emit("recovery:done", serde_json::json!({})).ok();
+                    }
+                    cleanup_orphaned_tmp(&db_bg);
+                    if let Ok(conn) = db_bg.get() {
+                        queries::reset_interrupted_jobs(&conn).ok();
+                    }
+                });
             }
 
             let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -172,36 +181,32 @@ pub fn run() {
 /// For each job in "recording" status that has chunks in DB:
 ///   1. concat chunks with ffmpeg → recording.mp4
 ///   2. update job file_path so reset_interrupted_jobs leaves it re-transcribable
-fn recover_interrupted_recordings(db: &DbPool) {
-    let job_ids = {
-        let conn = match db.get() {
-            Ok(c) => c,
-            Err(_) => return,
-        };
-        queries::jobs_with_pending_chunks(&conn).unwrap_or_default()
-    };
-
-    for job_id in job_ids {
+fn recover_interrupted_recordings(db: &DbPool, job_ids: &[String], app: &tauri::AppHandle) {
+    let total = job_ids.len();
+    for (i, job_id) in job_ids.iter().enumerate() {
         let chunks = {
             let conn = match db.get() { Ok(c) => c, Err(_) => continue };
-            let mut v = queries::get_recording_chunks(&conn, &job_id).unwrap_or_default();
-            v.sort_by_key(|(idx, _)| *idx);
-            v
+            queries::get_recording_chunks(&conn, job_id).unwrap_or_default()
         };
         if chunks.is_empty() { continue; }
 
-        let recovered = concat_chunks(&job_id, &chunks);
+        let recovered = concat_chunks(job_id, &chunks);
 
         if let Some(path) = recovered {
             let transcribe_path = mix_mic_if_available(&path);
             if let Ok(conn) = db.get() {
-                queries::update_job_file_path(&conn, &job_id, &transcribe_path).ok();
-                queries::delete_recording_chunks(&conn, &job_id).ok();
+                queries::update_job_file_path(&conn, job_id, &transcribe_path).ok();
+                queries::delete_recording_chunks(&conn, job_id).ok();
                 eprintln!("[recovery] job={job_id} recovered → {transcribe_path}");
             }
         } else {
             eprintln!("[recovery] job={job_id} chunk concat failed, will show as error");
         }
+
+        app.emit("recovery:progress", serde_json::json!({
+            "current": i + 1,
+            "total": total,
+        })).ok();
     }
 }
 
@@ -459,7 +464,7 @@ fn handle_recorder_event(
                 if !db_path.is_empty() {
                     queries::update_job_file_path(&conn, &id, db_path).ok();
                 }
-                queries::update_job_status(&conn, &id, "running").ok();
+                queries::update_job_status(&conn, &id, "pending").ok();
             }
 
             app.emit("recorder:stopped", serde_json::json!({
@@ -467,9 +472,6 @@ fn handle_recorder_event(
                 "file_path": final_path,
                 "duration": duration,
             })).ok();
-
-            // Start Pass 2 immediately — no chunk transcription to wait for
-            start_pass2(app, db, &id, &transcribe_path);
         }
         RecorderEvent::Screenshot { path } => {
             app.emit("recorder:screenshot", serde_json::json!({ "path": path })).ok();

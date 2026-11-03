@@ -6,7 +6,8 @@
       "Bash(cargo check:*)",
       "Bash(cargo build:*)",
       "WebSearch",
-      "WebFetch(domain:stackoverflow.com)"
+      "WebFetch(domain:stackoverflow.com)",
+      "Bash(grep -E \"\\\\.py$|\\\\.txt$|\\\\.toml$\")"
     ]
   }
 }
