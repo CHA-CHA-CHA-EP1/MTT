@@ -201,8 +201,10 @@ export function TranscriptPage({ jobId: jobIdProp }: TranscriptPageProps = {}) {
         () => setRecordingElapsed((e) => e + 1),
         1000
       );
+      setPanelOpen(false);
     } else {
       if (elapsedIntervalRef.current) clearInterval(elapsedIntervalRef.current);
+      setPanelOpen(true);
     }
     return () => { if (elapsedIntervalRef.current) clearInterval(elapsedIntervalRef.current); };
   }, [isLiveRecording]);
