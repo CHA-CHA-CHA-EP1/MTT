@@ -14,9 +14,14 @@ fn now() -> i64 {
 #[tauri::command]
 pub fn create_space(state: State<AppState>, name: String) -> Result<String, AppError> {
     let id = Uuid::new_v4().to_string();
-    let space = Space { id: id.clone(), name, created_at: now() };
+    let space = Space { id: id.clone(), name: name.clone(), created_at: now() };
     let conn = state.db.get()?;
     queries::insert_space(&conn, &space)?;
+    // Mirror into projects so jobs.project_id FK is satisfied
+    conn.execute(
+        "INSERT OR IGNORE INTO projects (id, name, created_at) VALUES (?1, ?2, ?3)",
+        rusqlite::params![space.id, name, space.created_at],
+    )?;
     Ok(id)
 }
 

@@ -34,6 +34,11 @@ pub fn new_pool(path: &str) -> Result<DbPool, DbError> {
              SELECT id, name, created_at FROM projects;
              UPDATE jobs SET space_id = project_id WHERE space_id IS NULL;"
         ).ok();
+        // ensure all spaces have a matching projects row (jobs.project_id FK requires it)
+        conn.execute(
+            "INSERT OR IGNORE INTO projects (id, name, created_at) SELECT id, name, created_at FROM spaces",
+            [],
+        ).ok();
         Ok(())
     });
     let pool = Pool::builder().max_size(5).build(manager)?;

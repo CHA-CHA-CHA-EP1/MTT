@@ -274,34 +274,6 @@ fn cleanup_orphaned_tmp(db: &DbPool) {
     }
 }
 
-/// Start Pass 2: re-transcribe the full recording with Whisper offline pipeline.
-/// Emits `recorder:refining`, clears live segments, then queues TranscribeFile.
-fn start_pass2(app: &tauri::AppHandle, db: &DbPool, job_id: &str, file_path: &str) {
-    if file_path.is_empty() {
-        if let Ok(conn) = db.get() {
-            queries::set_job_error(&conn, job_id, "No recording data captured. Recording may have been too short or failed to save.").ok();
-        }
-        app.emit("worker:error", serde_json::json!({ "id": job_id, "message": "No recording data captured" })).ok();
-        eprintln!("[pass2] no file for job={job_id}, marking error");
-        return;
-    }
-
-    app.emit("recorder:refining", serde_json::json!({ "id": job_id })).ok();
-
-    if let Ok(conn) = db.get() {
-        queries::delete_segments_for_job(&conn, job_id).ok();
-    }
-
-    let state: tauri::State<AppState> = app.state();
-    state.worker.send(&crate::worker::protocol::IncomingMessage::TranscribeFile {
-        id: job_id.to_owned(),
-        file: file_path.to_owned(),
-        mode: "offline".into(),
-        language: "th".into(),
-    }).ok();
-
-    eprintln!("[pass2] started for job={job_id} file={file_path}");
-}
 
 fn handle_worker_message(
     app: &tauri::AppHandle,
