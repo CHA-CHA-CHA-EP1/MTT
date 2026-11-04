@@ -38,7 +38,8 @@ pub fn run() {
             // Order matters: recover → cleanup → reset_interrupted_jobs.
             {
                 let job_ids = match db.get() {
-                    Ok(conn) => queries::jobs_with_pending_chunks(&conn).unwrap_or_default(),
+                    // Collect ALL jobs still in "recording" status (chunk-based AND SCRecordingOutput)
+                    Ok(conn) => queries::active_recording_job_ids(&conn).unwrap_or_default(),
                     Err(_) => vec![],
                 };
                 let db_bg = db.clone();
@@ -178,9 +179,9 @@ pub fn run() {
 }
 
 /// On startup, attempt to recover recordings that were interrupted by a crash.
-/// For each job in "recording" status that has chunks in DB:
-///   1. concat chunks with ffmpeg → recording.mp4
-///   2. update job file_path so reset_interrupted_jobs leaves it re-transcribable
+/// Handles two recording modes:
+///   - Chunk-based: concat chunks with ffmpeg → recording.mp4, update file_path
+///   - SCRecordingOutput (macOS 15+): recording.mp4 already exists on disk, just register file_path
 fn recover_interrupted_recordings(db: &DbPool, job_ids: &[String], app: &tauri::AppHandle) {
     let total = job_ids.len();
     for (i, job_id) in job_ids.iter().enumerate() {
@@ -188,19 +189,34 @@ fn recover_interrupted_recordings(db: &DbPool, job_ids: &[String], app: &tauri::
             let conn = match db.get() { Ok(c) => c, Err(_) => continue };
             queries::get_recording_chunks(&conn, job_id).unwrap_or_default()
         };
-        if chunks.is_empty() { continue; }
 
-        let recovered = concat_chunks(job_id, &chunks);
-
-        if let Some(path) = recovered {
-            let transcribe_path = mix_mic_if_available(&path);
-            if let Ok(conn) = db.get() {
-                queries::update_job_file_path(&conn, job_id, &transcribe_path).ok();
-                queries::delete_recording_chunks(&conn, job_id).ok();
-                eprintln!("[recovery] job={job_id} recovered → {transcribe_path}");
+        if chunks.is_empty() {
+            // SCRecordingOutput path: Swift writes recording.mp4 directly to the job dir.
+            // If the file exists on disk, register it so the job is re-transcribable.
+            let mp4 = std::env::temp_dir().join("mtt").join(job_id).join("recording.mp4");
+            if mp4.exists() {
+                let path = mp4.to_string_lossy().into_owned();
+                let transcribe_path = mix_mic_if_available(&path);
+                let db_path = if !transcribe_path.is_empty() { &transcribe_path } else { &path };
+                if let Ok(conn) = db.get() {
+                    queries::update_job_file_path(&conn, job_id, db_path).ok();
+                    eprintln!("[recovery] job={job_id} SCRecordingOutput found → {db_path}");
+                }
+            } else {
+                eprintln!("[recovery] job={job_id} no chunks and no recording.mp4, nothing to recover");
             }
         } else {
-            eprintln!("[recovery] job={job_id} chunk concat failed, will show as error");
+            let recovered = concat_chunks(job_id, &chunks);
+            if let Some(path) = recovered {
+                let transcribe_path = mix_mic_if_available(&path);
+                if let Ok(conn) = db.get() {
+                    queries::update_job_file_path(&conn, job_id, &transcribe_path).ok();
+                    queries::delete_recording_chunks(&conn, job_id).ok();
+                    eprintln!("[recovery] job={job_id} chunks recovered → {transcribe_path}");
+                }
+            } else {
+                eprintln!("[recovery] job={job_id} chunk concat failed, will show as error");
+            }
         }
 
         app.emit("recovery:progress", serde_json::json!({
@@ -237,7 +253,11 @@ fn cleanup_orphaned_tmp(db: &DbPool) {
     let tmp_dir = std::env::temp_dir().join("mtt");
     if !tmp_dir.exists() { return; }
 
-    let (known_paths, chunk_job_ids): (std::collections::HashSet<String>, std::collections::HashSet<String>) = {
+    let (known_paths, chunk_job_ids, recording_job_ids): (
+        std::collections::HashSet<String>,
+        std::collections::HashSet<String>,
+        std::collections::HashSet<String>,
+    ) = {
         let conn = match db.get() {
             Ok(c) => c,
             Err(_) => return,
@@ -245,7 +265,9 @@ fn cleanup_orphaned_tmp(db: &DbPool) {
         let paths = queries::list_all_job_file_paths(&conn).unwrap_or_default().into_iter().collect();
         // Jobs that have chunks in DB should not have their dirs deleted
         let chunk_jobs = queries::jobs_with_pending_chunks(&conn).unwrap_or_default().into_iter().collect();
-        (paths, chunk_jobs)
+        // Jobs still in "recording" status (e.g. SCRecordingOutput: no chunks, empty file_path)
+        let recording_jobs = queries::active_recording_job_ids(&conn).unwrap_or_default().into_iter().collect();
+        (paths, chunk_jobs, recording_jobs)
     };
 
     let entries = match std::fs::read_dir(&tmp_dir) {
@@ -263,8 +285,10 @@ fn cleanup_orphaned_tmp(db: &DbPool) {
         let in_use = known_paths.iter().any(|p| p.starts_with(dir_str.as_ref()));
         // Keep if this dir belongs to a job with recoverable chunks
         let has_chunks = chunk_job_ids.contains(&dir_name);
+        // Keep if this dir belongs to a job still marked "recording" (SCRecordingOutput: no chunks, empty file_path)
+        let is_active_recording = recording_job_ids.contains(&dir_name);
 
-        if !in_use && !has_chunks {
+        if !in_use && !has_chunks && !is_active_recording {
             if let Err(e) = std::fs::remove_dir_all(&dir) {
                 eprintln!("[cleanup] startup: failed to remove {}: {e}", dir.display());
             } else {

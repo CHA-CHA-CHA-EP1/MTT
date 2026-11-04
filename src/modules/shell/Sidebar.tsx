@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import {
   ChevronDown, ChevronRight, FileVideo, Folder, FolderOpen,
   Loader2, Monitor, Plus, Trash2, Video, Square, CheckCircle,
-  XCircle, Clock, Pencil, Inbox,
+  XCircle, Clock, Pencil, Inbox, FolderInput,
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
@@ -42,7 +42,7 @@ interface SidebarProps {
 
 export function Sidebar({ spaceId, selectedJobId, onSelectJob }: SidebarProps) {
   const navigate = useNavigate();
-  const { jobs, loading: jobsLoading, setActiveSpace, fetchBySpace, updateStatus, remove, updateTitle } = useJobStore();
+  const { jobs, loading: jobsLoading, setActiveSpace, fetchBySpace, updateStatus, remove, updateTitle, moveToFolder } = useJobStore();
   const { folders, loading: foldersLoading, setActiveSpace: setFolderSpace, create: createFolder, rename: renameFolder, remove: removeFolder } = useFolderStore();
   const whisperModel = useWhisperStore((s) => s.model);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
@@ -53,6 +53,7 @@ export function Sidebar({ spaceId, selectedJobId, onSelectJob }: SidebarProps) {
   const [editFolderName, setEditFolderName] = useState("");
   const [editingJobId, setEditingJobId] = useState<string | null>(null);
   const [editJobTitle, setEditJobTitle] = useState("");
+  const [movingJobId, setMovingJobId] = useState<string | null>(null);
 
   useEffect(() => {
     setActiveSpace(spaceId);
@@ -131,52 +132,88 @@ export function Sidebar({ spaceId, selectedJobId, onSelectJob }: SidebarProps) {
   const jobsByFolder = (folderId: string) => jobs.filter(j => j.folder_id === folderId);
 
   const MeetingItem = ({ job }: { job: Job }) => (
-    <div
-      className={cn(
-        "group flex cursor-pointer items-center gap-1.5 rounded px-2 py-1 text-xs",
-        selectedJobId === job.id
-          ? "bg-accent text-foreground"
-          : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
-      )}
-      onClick={() => {
-        if (editingJobId === job.id) return;
-        if (job.status !== "recording") onSelectJob(job.id);
-      }}
-    >
-      {job.recording_window ? <Monitor className="h-3 w-3 shrink-0" /> : <FileVideo className="h-3 w-3 shrink-0" />}
-      {editingJobId === job.id ? (
-        <input
-          autoFocus
-          value={editJobTitle}
-          onChange={(e) => setEditJobTitle(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") handleRenameJob(job.id);
-            if (e.key === "Escape") setEditingJobId(null);
-          }}
-          onBlur={() => handleRenameJob(job.id)}
-          className="flex-1 rounded bg-background px-1 text-xs outline-none ring-1 ring-foreground/20"
-          onClick={(e) => e.stopPropagation()}
-        />
-      ) : (
-        <div
-          className="flex min-w-0 flex-1 flex-col"
-          onDoubleClick={(e) => {
-            e.stopPropagation();
-            setEditingJobId(job.id);
-            setEditJobTitle(jobLabel(job));
-          }}
-        >
-          <span className="truncate">{jobLabel(job)}</span>
-          <span className="text-[10px] text-muted-foreground/60">{formatTimestamp(job.created_at)}</span>
+    <div className="relative">
+      <div
+        className={cn(
+          "group flex cursor-pointer items-center gap-1.5 rounded px-2 py-1 text-xs",
+          selectedJobId === job.id
+            ? "bg-accent text-foreground"
+            : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+        )}
+        onClick={() => {
+          if (editingJobId === job.id) return;
+          if (movingJobId === job.id) { setMovingJobId(null); return; }
+          onSelectJob(job.id);
+        }}
+      >
+        {job.recording_window ? <Monitor className="h-3 w-3 shrink-0" /> : <FileVideo className="h-3 w-3 shrink-0" />}
+        {editingJobId === job.id ? (
+          <input
+            autoFocus
+            value={editJobTitle}
+            onChange={(e) => setEditJobTitle(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleRenameJob(job.id);
+              if (e.key === "Escape") setEditingJobId(null);
+            }}
+            onBlur={() => handleRenameJob(job.id)}
+            className="flex-1 rounded bg-background px-1 text-xs outline-none ring-1 ring-foreground/20"
+            onClick={(e) => e.stopPropagation()}
+          />
+        ) : (
+          <div
+            className="flex min-w-0 flex-1 flex-col"
+            onDoubleClick={(e) => {
+              e.stopPropagation();
+              setEditingJobId(job.id);
+              setEditJobTitle(jobLabel(job));
+            }}
+          >
+            <span className="truncate">{jobLabel(job)}</span>
+            <span className="text-[10px] text-muted-foreground/60">{formatTimestamp(job.created_at)}</span>
+          </div>
+        )}
+        <StatusIcon status={job.status} />
+        <div className="hidden items-center gap-0.5 group-hover:flex" onClick={(e) => e.stopPropagation()}>
+          {folders.length > 0 && (
+            <button
+              onClick={() => setMovingJobId(movingJobId === job.id ? null : job.id)}
+              className="rounded p-0.5 text-muted-foreground hover:text-foreground"
+              title="Move to folder"
+            >
+              <FolderInput className="h-3 w-3" />
+            </button>
+          )}
+          <button
+            onClick={() => remove(job.id)}
+            className="rounded p-0.5 text-muted-foreground hover:text-destructive"
+          >
+            <Trash2 className="h-3 w-3" />
+          </button>
+        </div>
+      </div>
+      {movingJobId === job.id && (
+        <div className="absolute left-2 right-2 z-10 mt-0.5 rounded border bg-popover p-1 shadow-md">
+          <p className="px-1 pb-1 text-[10px] text-muted-foreground">Move to folder</p>
+          {job.folder_id && (
+            <button
+              className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-xs hover:bg-accent"
+              onClick={() => { moveToFolder(job.id, null); setMovingJobId(null); }}
+            >
+              <Inbox className="h-3 w-3" /> Inbox
+            </button>
+          )}
+          {folders.filter(f => f.id !== job.folder_id).map(f => (
+            <button
+              key={f.id}
+              className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-xs hover:bg-accent"
+              onClick={() => { moveToFolder(job.id, f.id); setMovingJobId(null); }}
+            >
+              <Folder className="h-3 w-3" /> {f.name}
+            </button>
+          ))}
         </div>
       )}
-      <StatusIcon status={job.status} />
-      <button
-        onClick={(e) => { e.stopPropagation(); remove(job.id); }}
-        className="hidden rounded p-0.5 text-muted-foreground hover:text-destructive group-hover:block"
-      >
-        <Trash2 className="h-3 w-3" />
-      </button>
     </div>
   );
 

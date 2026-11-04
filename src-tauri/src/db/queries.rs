@@ -36,6 +36,7 @@ pub struct Job {
     pub recording_window: Option<String>,
     pub error_message: Option<String>,
     pub title: Option<String>,
+    pub folder_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -215,7 +216,7 @@ pub fn reset_interrupted_jobs(conn: &Connection) -> Result<()> {
 
 pub fn get_job(conn: &Connection, id: &str) -> Result<Option<Job>> {
     let mut stmt = conn.prepare(
-        "SELECT id, project_id, file_path, status, whisper_model, created_at, recording_window, error_message, title FROM jobs WHERE id = ?1",
+        "SELECT id, project_id, file_path, status, whisper_model, created_at, recording_window, error_message, title, folder_id FROM jobs WHERE id = ?1",
     )?;
     let mut rows = stmt.query(params![id])?;
     if let Some(row) = rows.next()? {
@@ -229,6 +230,7 @@ pub fn get_job(conn: &Connection, id: &str) -> Result<Option<Job>> {
             recording_window: row.get(6)?,
             error_message: row.get(7)?,
             title: row.get(8)?,
+            folder_id: row.get(9)?,
         }))
     } else {
         Ok(None)
@@ -242,7 +244,7 @@ pub fn update_job_file_path(conn: &Connection, id: &str, file_path: &str) -> Res
 
 pub fn list_jobs_by_project(conn: &Connection, project_id: &str) -> Result<Vec<Job>> {
     let mut stmt = conn.prepare(
-        "SELECT id, project_id, file_path, status, whisper_model, created_at, recording_window, error_message, title
+        "SELECT id, project_id, file_path, status, whisper_model, created_at, recording_window, error_message, title, folder_id
          FROM jobs WHERE project_id = ?1 ORDER BY created_at DESC",
     )?;
     let rows = stmt.query_map(params![project_id], |row| {
@@ -256,6 +258,7 @@ pub fn list_jobs_by_project(conn: &Connection, project_id: &str) -> Result<Vec<J
             recording_window: row.get(6)?,
             error_message: row.get(7)?,
             title: row.get(8)?,
+            folder_id: row.get(9)?,
         })
     })?;
     rows.collect()
@@ -268,7 +271,7 @@ pub fn delete_job(conn: &Connection, id: &str) -> Result<()> {
 
 pub fn list_jobs_by_space(conn: &Connection, space_id: &str) -> Result<Vec<Job>> {
     let mut stmt = conn.prepare(
-        "SELECT id, project_id, file_path, status, whisper_model, created_at, recording_window, error_message, title
+        "SELECT id, project_id, file_path, status, whisper_model, created_at, recording_window, error_message, title, folder_id
          FROM jobs WHERE space_id = ?1 ORDER BY created_at DESC",
     )?;
     let rows = stmt.query_map(params![space_id], |row| {
@@ -282,6 +285,7 @@ pub fn list_jobs_by_space(conn: &Connection, space_id: &str) -> Result<Vec<Job>>
             recording_window: row.get(6)?,
             error_message: row.get(7)?,
             title: row.get(8)?,
+            folder_id: row.get(9)?,
         })
     })?;
     rows.collect()
@@ -357,6 +361,15 @@ pub fn jobs_with_pending_chunks(conn: &Connection) -> Result<Vec<String>> {
          JOIN jobs j ON j.id = rc.job_id
          WHERE j.status = 'recording'",
     )?;
+    let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+    rows.collect()
+}
+
+/// Returns IDs of all jobs currently in "recording" status.
+/// Used by cleanup_orphaned_tmp to preserve dirs for in-progress recordings
+/// (including SCRecordingOutput jobs that have no chunks in DB yet).
+pub fn active_recording_job_ids(conn: &Connection) -> Result<Vec<String>> {
+    let mut stmt = conn.prepare("SELECT id FROM jobs WHERE status = 'recording'")?;
     let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
     rows.collect()
 }
@@ -510,6 +523,7 @@ mod tests {
             recording_window: None,
             error_message: None,
             title: None,
+            folder_id: None,
         }
     }
 

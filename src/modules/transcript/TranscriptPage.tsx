@@ -127,9 +127,11 @@ const SegmentItem = memo(
 
 interface TranscriptPageProps {
   jobId?: string;
+  panelOpen?: boolean;
+  onPanelOpenChange?: (open: boolean) => void;
 }
 
-export function TranscriptPage({ jobId: jobIdProp }: TranscriptPageProps = {}) {
+export function TranscriptPage({ jobId: jobIdProp, panelOpen: panelOpenProp, onPanelOpenChange }: TranscriptPageProps = {}) {
   const { projectId, jobId: jobIdParam } = useParams<{ projectId: string; jobId: string }>();
   const jobId = jobIdProp ?? jobIdParam;
   const navigate = useNavigate();
@@ -155,7 +157,13 @@ export function TranscriptPage({ jobId: jobIdProp }: TranscriptPageProps = {}) {
   const [isRefining, setIsRefining] = useState(false);
   const [liveChunks, setLiveChunks] = useState<DVRChunk[]>([]);
   const [splitPct, setSplitPct] = useState(50);
-  const [panelOpen, setPanelOpen] = useState(true);
+  const [panelOpenLocal, setPanelOpenLocal] = useState(true);
+  const panelOpen = panelOpenProp !== undefined ? panelOpenProp : panelOpenLocal;
+  const setPanelOpen = useCallback((v: boolean | ((prev: boolean) => boolean)) => {
+    const next = typeof v === "function" ? v(panelOpen) : v;
+    setPanelOpenLocal(next);
+    onPanelOpenChange?.(next);
+  }, [panelOpen, onPanelOpenChange]);
   const [ccEnabled, setCcEnabled] = useState(false);
   const [ccSizeIdx, setCcSizeIdx] = useState(1);
   const [ccMenuOpen, setCcMenuOpen] = useState(false);

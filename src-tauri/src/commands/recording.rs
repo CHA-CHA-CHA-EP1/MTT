@@ -41,6 +41,7 @@ pub fn start_recording(
         recording_window: Some(window_title),
         error_message: None,
         title: None,
+        folder_id: None,
     };
 
     {

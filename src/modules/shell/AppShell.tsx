@@ -12,6 +12,7 @@ export function AppShell() {
   const { spaceId, jobId: routeJobId } = useParams<{ spaceId: string; jobId?: string }>();
   const [selectedJobId, setSelectedJobId] = useState<string | null>(routeJobId ?? null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(true);
   const { spaces, fetch } = useSpaceStore();
 
   useEffect(() => { fetch(); }, []);
@@ -47,7 +48,7 @@ export function AppShell() {
 
         <main className="flex flex-1 overflow-hidden">
           {selectedJobId ? (
-            <TranscriptPage jobId={selectedJobId} />
+            <TranscriptPage key={selectedJobId} jobId={selectedJobId} panelOpen={panelOpen} onPanelOpenChange={setPanelOpen} />
           ) : (
             <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center text-muted-foreground">
               <p className="text-sm">Select a meeting to view the transcript</p>

@@ -37,6 +37,7 @@ pub fn create_job(
         recording_window: None,
         error_message: None,
         title: None,
+        folder_id: None,
     };
 
     {
