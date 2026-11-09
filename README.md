@@ -8,6 +8,12 @@ Built with Tauri v2 · React · Rust · Python (mlx-whisper)
 
 ## Features
 
+### Workspace Organization
+- **IDE-style layout**: Spaces (top-level workspaces), Folders (optional grouping), Meetings — navigate via sidebar tree
+- **Inbox**: new recordings/imports land here until organized
+- **Meeting rename**: double-click any meeting in the sidebar to rename
+- **Space picker**: create or switch workspaces from the sidebar header
+
 ### Live Recording
 - Record any window directly from the app (ScreenCaptureKit)
 - Two-step window picker — select window, preview screenshot, then start recording
@@ -15,10 +21,13 @@ Built with Tauri v2 · React · Rust · Python (mlx-whisper)
 - UI hides AI/edit features during recording; shows "Improving transcript quality..." overlay during Pass 2
 - Requires Screen Recording permission + Tauri app codesigned with `com.apple.security.screen-capture`
 - macOS 15+: full video+audio via `SCRecordingOutput`; macOS 13/14: audio-only fallback
+- **Crash resilience**: audio chunks persisted to DB; interrupted recordings auto-recover on next launch
 
 ### Transcription
 - Transcribe video files locally using mlx-whisper (Apple Silicon)
-- VAD (Voice Activity Detection) via silero for accurate segment splitting
+- **Whisper model selector** — choose model (tiny/base/small/large) per job in Settings
+- VAD (Voice Activity Detection) via silero with tuned parameters for accurate speech chunking
+- **Global transcription status** — progress indicator visible from anywhere in the app
 - Inline segment editing — double-click to correct text
 
 ### Transcript View
@@ -328,7 +337,6 @@ Open Settings (⚙️ in Projects header) to configure:
 
 - Thai segment splitting not supported (`word_timestamps` causes syllable-level tokenization issues with mlx-whisper)
 - Export (.srt / .txt) not yet implemented
-- Whisper model selector not yet implemented (model hardcoded)
 - CC settings (on/off, font size) do not persist across sessions
 - Live transcription during recording not yet implemented (real-time STT for Thai requires cloud API)
 - Live recording saves video on **macOS 15+** via `SCRecordingOutput`; macOS 13/14 is audio-only
