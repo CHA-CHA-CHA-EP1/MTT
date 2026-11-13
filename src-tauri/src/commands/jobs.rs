@@ -96,13 +96,13 @@ pub fn delete_job(state: State<AppState>, id: String) -> Result<(), AppError> {
     Ok(())
 }
 
-/// Delete the job's tmp recording directory if it lives under the mtt temp folder.
+/// Delete the job's recording directory if it lives under a folder we own.
 pub fn cleanup_recording_dir(file_path: &str) {
     if file_path.is_empty() { return; }
     let path = std::path::Path::new(file_path);
-    // Only delete dirs we own: …/T/mtt/<uuid>/…
-    let in_mtt_tmp = path.components().any(|c| c.as_os_str() == "mtt");
-    if !in_mtt_tmp { return; }
+    // Allow paths under …/recordings/<uuid>/… (persistent) or legacy …/T/mtt/<uuid>/…
+    let in_owned_dir = path.components().any(|c| c.as_os_str() == "recordings" || c.as_os_str() == "mtt");
+    if !in_owned_dir { return; }
     if let Some(dir) = path.parent() {
         if dir.exists() {
             if let Err(e) = std::fs::remove_dir_all(dir) {

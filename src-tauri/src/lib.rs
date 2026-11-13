@@ -51,7 +51,7 @@ pub fn run() {
                         recover_interrupted_recordings(&db_bg, &job_ids, &handle_bg);
                         handle_bg.emit("recovery:done", serde_json::json!({})).ok();
                     }
-                    cleanup_orphaned_tmp(&db_bg);
+                    cleanup_orphaned_tmp(&db_bg, &handle_bg);
                     if let Ok(conn) = db_bg.get() {
                         queries::reset_interrupted_jobs(&conn).ok();
                     }
@@ -193,7 +193,9 @@ fn recover_interrupted_recordings(db: &DbPool, job_ids: &[String], app: &tauri::
         if chunks.is_empty() {
             // SCRecordingOutput path: Swift writes recording.mp4 directly to the job dir.
             // If the file exists on disk, register it so the job is re-transcribable.
-            let mp4 = std::env::temp_dir().join("mtt").join(job_id).join("recording.mp4");
+            let recordings_base = app.path().app_data_dir()
+                .unwrap_or_else(|_| std::env::temp_dir());
+            let mp4 = recordings_base.join("recordings").join(job_id).join("recording.mp4");
             if mp4.exists() {
                 let path = mp4.to_string_lossy().into_owned();
                 let transcribe_path = mix_mic_if_available(&path);
@@ -247,10 +249,12 @@ fn concat_chunks(job_id: &str, chunks: &[(u32, String)]) -> Option<String> {
     ok.then(|| fp.to_string_lossy().into_owned())
 }
 
-/// On startup, delete any dirs in the mtt tmp folder not referenced by a job in DB.
+/// On startup, delete any dirs in the recordings folder not referenced by a job in DB.
 /// Skips dirs that contain chunks for recoverable jobs.
-fn cleanup_orphaned_tmp(db: &DbPool) {
-    let tmp_dir = std::env::temp_dir().join("mtt");
+fn cleanup_orphaned_tmp(db: &DbPool, app: &tauri::AppHandle) {
+    let recordings_base = app.path().app_data_dir()
+        .unwrap_or_else(|_| std::env::temp_dir());
+    let tmp_dir = recordings_base.join("recordings");
     if !tmp_dir.exists() { return; }
 
     let (known_paths, chunk_job_ids, recording_job_ids): (

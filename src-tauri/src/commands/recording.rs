@@ -1,6 +1,6 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 use uuid::Uuid;
 
 use crate::db::queries::{self, Job};
@@ -17,6 +17,7 @@ pub fn list_windows(state: State<AppState>) -> Result<(), AppError> {
 
 #[tauri::command]
 pub fn start_recording(
+    app: AppHandle,
     state: State<AppState>,
     space_id: String,
     window_id: u32,
@@ -29,7 +30,10 @@ pub fn start_recording(
 
     let id = Uuid::new_v4().to_string();
     let created_at = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
-    let output_dir = std::env::temp_dir().join("mtt").join(&id);
+    let recordings_dir = app.path().app_data_dir()
+        .map_err(|e| AppError::Other(format!("app_data_dir: {e}")))?
+        .join("recordings");
+    let output_dir = recordings_dir.join(&id);
 
     let job = Job {
         id: id.clone(),
