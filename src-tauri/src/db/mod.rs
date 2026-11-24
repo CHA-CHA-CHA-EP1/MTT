@@ -39,6 +39,14 @@ pub fn new_pool(path: &str) -> Result<DbPool, DbError> {
             "INSERT OR IGNORE INTO projects (id, name, created_at) SELECT id, name, created_at FROM spaces",
             [],
         ).ok();
+        // indexes run after migrations so space_id etc. are guaranteed to exist
+        conn.execute_batch("
+            CREATE INDEX IF NOT EXISTS idx_jobs_space_id        ON jobs(space_id);
+            CREATE INDEX IF NOT EXISTS idx_jobs_status          ON jobs(status);
+            CREATE INDEX IF NOT EXISTS idx_segments_job_id      ON segments(job_id);
+            CREATE INDEX IF NOT EXISTS idx_recording_chunks_job ON recording_chunks(job_id);
+            CREATE INDEX IF NOT EXISTS idx_folders_space_id     ON folders(space_id);
+        ").ok();
         Ok(())
     });
     let pool = Pool::builder().max_size(5).build(manager)?;
