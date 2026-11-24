@@ -14,7 +14,7 @@ fn now() -> i64 {
 #[tauri::command]
 pub fn create_space(state: State<AppState>, name: String) -> Result<String, AppError> {
     let id = Uuid::new_v4().to_string();
-    let space = Space { id: id.clone(), name: name.clone(), created_at: now() };
+    let space = Space { id: id.clone(), name: name.clone(), created_at: now(), pinned: false };
     let conn = state.db.get()?;
     queries::insert_space(&conn, &space)?;
     // Mirror into projects so jobs.project_id FK is satisfied
@@ -41,6 +41,12 @@ pub fn get_space(state: State<AppState>, id: String) -> Result<Space, AppError> 
 pub fn rename_space(state: State<AppState>, id: String, name: String) -> Result<(), AppError> {
     let conn = state.db.get()?;
     Ok(queries::rename_space(&conn, &id, &name)?)
+}
+
+#[tauri::command]
+pub fn pin_space(state: State<AppState>, id: String, pinned: bool) -> Result<(), AppError> {
+    let conn = state.db.get()?;
+    Ok(queries::pin_space(&conn, &id, pinned)?)
 }
 
 #[tauri::command]

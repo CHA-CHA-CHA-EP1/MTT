@@ -15,6 +15,7 @@ pub struct Space {
     pub id: String,
     pub name: String,
     pub created_at: i64,
+    pub pinned: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -37,6 +38,7 @@ pub struct Job {
     pub error_message: Option<String>,
     pub title: Option<String>,
     pub folder_id: Option<String>,
+    pub notes: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -105,27 +107,27 @@ pub fn delete_project(conn: &Connection, id: &str) -> Result<()> {
 
 pub fn insert_space(conn: &Connection, space: &Space) -> Result<()> {
     conn.execute(
-        "INSERT INTO spaces (id, name, created_at) VALUES (?1, ?2, ?3)",
-        params![space.id, space.name, space.created_at],
+        "INSERT INTO spaces (id, name, created_at, pinned) VALUES (?1, ?2, ?3, ?4)",
+        params![space.id, space.name, space.created_at, space.pinned],
     )?;
     Ok(())
 }
 
 pub fn list_spaces(conn: &Connection) -> Result<Vec<Space>> {
     let mut stmt = conn.prepare(
-        "SELECT id, name, created_at FROM spaces ORDER BY created_at DESC",
+        "SELECT id, name, created_at, pinned FROM spaces ORDER BY pinned DESC, created_at DESC",
     )?;
     let rows = stmt.query_map([], |row| {
-        Ok(Space { id: row.get(0)?, name: row.get(1)?, created_at: row.get(2)? })
+        Ok(Space { id: row.get(0)?, name: row.get(1)?, created_at: row.get(2)?, pinned: row.get::<_, i32>(3)? != 0 })
     })?;
     rows.collect()
 }
 
 pub fn get_space(conn: &Connection, id: &str) -> Result<Option<Space>> {
-    let mut stmt = conn.prepare("SELECT id, name, created_at FROM spaces WHERE id = ?1")?;
+    let mut stmt = conn.prepare("SELECT id, name, created_at, pinned FROM spaces WHERE id = ?1")?;
     let mut rows = stmt.query(params![id])?;
     if let Some(row) = rows.next()? {
-        Ok(Some(Space { id: row.get(0)?, name: row.get(1)?, created_at: row.get(2)? }))
+        Ok(Some(Space { id: row.get(0)?, name: row.get(1)?, created_at: row.get(2)?, pinned: row.get::<_, i32>(3)? != 0 }))
     } else {
         Ok(None)
     }
@@ -133,6 +135,11 @@ pub fn get_space(conn: &Connection, id: &str) -> Result<Option<Space>> {
 
 pub fn rename_space(conn: &Connection, id: &str, name: &str) -> Result<()> {
     conn.execute("UPDATE spaces SET name = ?1 WHERE id = ?2", params![name, id])?;
+    Ok(())
+}
+
+pub fn pin_space(conn: &Connection, id: &str, pinned: bool) -> Result<()> {
+    conn.execute("UPDATE spaces SET pinned = ?1 WHERE id = ?2", params![pinned as i32, id])?;
     Ok(())
 }
 
@@ -197,26 +204,50 @@ pub fn set_job_error(conn: &Connection, id: &str, message: &str) -> Result<()> {
     Ok(())
 }
 
-/// On app startup, reset jobs that were interrupted by force-quit or crash.
-/// - running/pending: transcription was mid-flight → reset to error, user can re-transcribe
-/// - recording: app crashed during capture → reset to error, recovery attempted separately
-pub fn reset_interrupted_jobs(conn: &Connection) -> Result<()> {
+/// Reset jobs that were mid-transcription when the Python worker crashed.
+/// Only touches running/pending — recording status is managed by the recorder separately.
+pub fn reset_transcription_jobs_to_error(conn: &Connection) -> Result<()> {
     conn.execute(
-        "UPDATE jobs SET status = 'error', error_message = 'Transcription was interrupted (app closed). Click Re-transcribe to try again.'
+        "UPDATE jobs SET status = 'error', error_message = 'Transcription worker crashed. Click Re-transcribe to try again.'
          WHERE status IN ('running', 'pending')",
-        [],
-    )?;
-    conn.execute(
-        "UPDATE jobs SET status = 'error', error_message = 'Recording was interrupted (app closed). Chunks may be recoverable.'
-         WHERE status = 'recording'",
         [],
     )?;
     Ok(())
 }
 
+/// Collect IDs of all jobs that need startup recovery (recording/running/pending).
+/// Must be called before spawning the recovery thread so the snapshot is taken
+/// before any new jobs are created — the reset then only touches these exact IDs.
+pub fn collect_interrupted_job_ids(conn: &Connection) -> Result<Vec<String>> {
+    let mut stmt = conn.prepare(
+        "SELECT id FROM jobs WHERE status IN ('recording', 'running', 'pending')",
+    )?;
+    let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+    rows.collect()
+}
+
+/// On app startup, reset only the specific jobs that were interrupted (by force-quit or crash).
+/// Takes explicit IDs collected before the recovery thread started, so any job created
+/// after launch is never touched — no time-based heuristic needed.
+pub fn reset_interrupted_jobs(conn: &Connection, job_ids: &[String]) -> Result<()> {
+    if job_ids.is_empty() { return Ok(()); }
+    for id in job_ids {
+        conn.execute(
+            "UPDATE jobs SET status = 'error',
+                error_message = CASE status
+                    WHEN 'recording' THEN 'Recording was interrupted (app closed). Chunks may be recoverable.'
+                    ELSE 'Transcription was interrupted (app closed). Click Re-transcribe to try again.'
+                END
+             WHERE id = ?1 AND status IN ('recording', 'running', 'pending')",
+            params![id],
+        )?;
+    }
+    Ok(())
+}
+
 pub fn get_job(conn: &Connection, id: &str) -> Result<Option<Job>> {
     let mut stmt = conn.prepare(
-        "SELECT id, project_id, file_path, status, whisper_model, created_at, recording_window, error_message, title, folder_id FROM jobs WHERE id = ?1",
+        "SELECT id, project_id, file_path, status, whisper_model, created_at, recording_window, error_message, title, folder_id, notes FROM jobs WHERE id = ?1",
     )?;
     let mut rows = stmt.query(params![id])?;
     if let Some(row) = rows.next()? {
@@ -231,10 +262,22 @@ pub fn get_job(conn: &Connection, id: &str) -> Result<Option<Job>> {
             error_message: row.get(7)?,
             title: row.get(8)?,
             folder_id: row.get(9)?,
+            notes: row.get(10)?,
         }))
     } else {
         Ok(None)
     }
+}
+
+pub fn get_job_notes(conn: &Connection, id: &str) -> Result<Option<String>> {
+    let mut stmt = conn.prepare("SELECT notes FROM jobs WHERE id = ?1")?;
+    let mut rows = stmt.query(params![id])?;
+    if let Some(row) = rows.next()? { Ok(row.get(0)?) } else { Ok(None) }
+}
+
+pub fn save_job_notes(conn: &Connection, id: &str, notes: &str) -> Result<()> {
+    conn.execute("UPDATE jobs SET notes = ?1 WHERE id = ?2", params![notes, id])?;
+    Ok(())
 }
 
 pub fn update_job_file_path(conn: &Connection, id: &str, file_path: &str) -> Result<()> {
@@ -244,7 +287,7 @@ pub fn update_job_file_path(conn: &Connection, id: &str, file_path: &str) -> Res
 
 pub fn list_jobs_by_project(conn: &Connection, project_id: &str) -> Result<Vec<Job>> {
     let mut stmt = conn.prepare(
-        "SELECT id, project_id, file_path, status, whisper_model, created_at, recording_window, error_message, title, folder_id
+        "SELECT id, project_id, file_path, status, whisper_model, created_at, recording_window, error_message, title, folder_id, notes
          FROM jobs WHERE project_id = ?1 ORDER BY created_at DESC",
     )?;
     let rows = stmt.query_map(params![project_id], |row| {
@@ -259,6 +302,7 @@ pub fn list_jobs_by_project(conn: &Connection, project_id: &str) -> Result<Vec<J
             error_message: row.get(7)?,
             title: row.get(8)?,
             folder_id: row.get(9)?,
+            notes: row.get(10)?,
         })
     })?;
     rows.collect()
@@ -271,7 +315,7 @@ pub fn delete_job(conn: &Connection, id: &str) -> Result<()> {
 
 pub fn list_jobs_by_space(conn: &Connection, space_id: &str) -> Result<Vec<Job>> {
     let mut stmt = conn.prepare(
-        "SELECT id, project_id, file_path, status, whisper_model, created_at, recording_window, error_message, title, folder_id
+        "SELECT id, project_id, file_path, status, whisper_model, created_at, recording_window, error_message, title, folder_id, notes
          FROM jobs WHERE space_id = ?1 ORDER BY created_at DESC",
     )?;
     let rows = stmt.query_map(params![space_id], |row| {
@@ -286,6 +330,7 @@ pub fn list_jobs_by_space(conn: &Connection, space_id: &str) -> Result<Vec<Job>>
             error_message: row.get(7)?,
             title: row.get(8)?,
             folder_id: row.get(9)?,
+            notes: row.get(10)?,
         })
     })?;
     rows.collect()
@@ -387,6 +432,25 @@ pub fn insert_segment(conn: &Connection, seg: &Segment) -> Result<()> {
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         params![seg.job_id, seg.idx, seg.start, seg.end, seg.text, seg.corrected_text, seg.suspect as i32],
     )?;
+    Ok(())
+}
+
+pub fn insert_segments_batch(conn: &Connection, segments: &[Segment]) -> Result<()> {
+    if segments.is_empty() { return Ok(()); }
+    let tx = conn.unchecked_transaction()?;
+    {
+        let mut stmt = tx.prepare(
+            "INSERT INTO segments (job_id, idx, start, end, text, corrected_text, suspect)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        )?;
+        for seg in segments {
+            stmt.execute(params![
+                seg.job_id, seg.idx, seg.start, seg.end,
+                seg.text, seg.corrected_text, seg.suspect as i32
+            ])?;
+        }
+    }
+    tx.commit()?;
     Ok(())
 }
 

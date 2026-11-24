@@ -20,13 +20,15 @@ CREATE TABLE IF NOT EXISTS jobs (
     error_message    TEXT,
     space_id         TEXT,
     folder_id        TEXT,
-    title            TEXT
+    title            TEXT,
+    notes            TEXT
 );
 
 CREATE TABLE IF NOT EXISTS spaces (
     id         TEXT    PRIMARY KEY,
     name       TEXT    NOT NULL,
-    created_at INTEGER NOT NULL
+    created_at INTEGER NOT NULL,
+    pinned     INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS folders (

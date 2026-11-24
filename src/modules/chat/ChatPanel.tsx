@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { X, MessageSquare, Send } from "lucide-react";
+import { X, MessageSquare, Send, Square } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ChatMessage, chatWithTranscript, getAiConfig, listAiModels, getSummaryConfig } from "@/lib/tauri";
+import { cancelAiStream, ChatMessage, chatWithTranscript, getAiConfig, listAiModels, getSummaryConfig } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -191,13 +191,22 @@ export function ChatPanel({ jobId, onClose }: Props) {
             className="flex-1 resize-none rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-foreground/30 disabled:opacity-50"
             style={{ maxHeight: "80px", overflowY: "auto" }}
           />
-          <button
-            onClick={handleSend}
-            disabled={!input.trim() || streaming}
-            className="rounded-lg bg-foreground p-2 text-background transition-opacity hover:opacity-80 disabled:opacity-40"
-          >
-            <Send className="h-3.5 w-3.5" />
-          </button>
+          {streaming ? (
+            <button
+              onClick={() => cancelAiStream(jobId).catch(() => {})}
+              className="rounded-lg border p-2 text-muted-foreground hover:border-destructive hover:text-destructive"
+            >
+              <Square className="h-3.5 w-3.5 fill-current" />
+            </button>
+          ) : (
+            <button
+              onClick={handleSend}
+              disabled={!input.trim()}
+              className="rounded-lg bg-foreground p-2 text-background transition-opacity hover:opacity-80 disabled:opacity-40"
+            >
+              <Send className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
         <p className="mt-1.5 text-[10px] text-muted-foreground/50">Enter to send · Shift+Enter for newline</p>
       </div>

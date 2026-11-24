@@ -36,24 +36,28 @@ pub fn run() {
 
             // Run recovery in background so app launches immediately.
             // Order matters: recover → cleanup → reset_interrupted_jobs.
+            // IDs are snapshotted here (before spawn) so reset never touches jobs
+            // created after launch — no time-based heuristic needed.
             {
-                let job_ids = match db.get() {
-                    // Collect ALL jobs still in "recording" status (chunk-based AND SCRecordingOutput)
-                    Ok(conn) => queries::active_recording_job_ids(&conn).unwrap_or_default(),
-                    Err(_) => vec![],
+                let (recording_ids, all_interrupted_ids) = match db.get() {
+                    Ok(conn) => (
+                        queries::active_recording_job_ids(&conn).unwrap_or_default(),
+                        queries::collect_interrupted_job_ids(&conn).unwrap_or_default(),
+                    ),
+                    Err(_) => (vec![], vec![]),
                 };
                 let db_bg = db.clone();
                 let handle_bg = app_handle.clone();
                 std::thread::spawn(move || {
-                    let total = job_ids.len();
+                    let total = recording_ids.len();
                     if total > 0 {
                         handle_bg.emit("recovery:start", total).ok();
-                        recover_interrupted_recordings(&db_bg, &job_ids, &handle_bg);
+                        recover_interrupted_recordings(&db_bg, &recording_ids, &handle_bg);
                         handle_bg.emit("recovery:done", serde_json::json!({})).ok();
                     }
                     cleanup_orphaned_tmp(&db_bg, &handle_bg);
                     if let Ok(conn) = db_bg.get() {
-                        queries::reset_interrupted_jobs(&conn).ok();
+                        queries::reset_interrupted_jobs(&conn, &all_interrupted_ids).ok();
                     }
                 });
             }
@@ -80,6 +84,8 @@ pub fn run() {
 
             let db_for_worker = db.clone();
             let app_handle_w = app_handle.clone();
+            let db_crash = db.clone();
+            let app_crash = app_handle.clone();
 
             let worker_args_ref: Vec<&str> = worker_args.iter().map(|s| s.as_str()).collect();
             let worker = Worker::spawn(
@@ -87,6 +93,12 @@ pub fn run() {
                 &worker_args_ref,
                 Arc::new(move |msg| {
                     handle_worker_message(&app_handle_w, &db_for_worker, msg);
+                }),
+                Arc::new(move || {
+                    app_crash.emit("worker:crashed", ()).ok();
+                    if let Ok(conn) = db_crash.get() {
+                        queries::reset_transcription_jobs_to_error(&conn).ok();
+                    }
                 }),
             )?;
 
@@ -135,6 +147,7 @@ pub fn run() {
             commands::spaces::list_spaces,
             commands::spaces::get_space,
             commands::spaces::rename_space,
+            commands::spaces::pin_space,
             commands::spaces::delete_space,
             commands::folders::create_folder,
             commands::folders::list_folders,
@@ -163,6 +176,8 @@ pub fn run() {
             commands::settings::test_ai_connection,
             commands::settings::get_whisper_model,
             commands::settings::save_whisper_model,
+            commands::notes::get_job_notes,
+            commands::notes::save_job_notes,
             commands::chat::chat_with_transcript,
             commands::summary::get_job_summary,
             commands::summary::generate_summary,
@@ -318,8 +333,8 @@ fn handle_worker_message(
         OutgoingMessage::Chunk { id, base_idx, index, segments } => {
             eprintln!("[worker] Chunk id={id} index={index} segs={}", segments.len());
             if let Ok(conn) = db.get() {
-                for (i, seg) in segments.iter().enumerate() {
-                    let db_seg = queries::Segment {
+                let db_segs: Vec<queries::Segment> = segments.iter().enumerate().map(|(i, seg)| {
+                    queries::Segment {
                         id: 0,
                         job_id: id.clone(),
                         idx: (*base_idx as i64) + i as i64,
@@ -328,9 +343,9 @@ fn handle_worker_message(
                         text: seg.text.clone(),
                         corrected_text: None,
                         suspect: seg.suspect,
-                    };
-                    queries::insert_segment(&conn, &db_seg).ok();
-                }
+                    }
+                }).collect();
+                queries::insert_segments_batch(&conn, &db_segs).ok();
             }
             app.emit("worker:chunk", serde_json::json!({ "id": id, "index": index })).ok();
         }
@@ -384,7 +399,7 @@ fn mix_mic_if_available(recording_path: &str) -> String {
             "-y",
             "-i", recording_path,
             "-i", mic_path.to_str().unwrap_or_default(),
-            "-filter_complex", "[0:a][1:a]amix=inputs=2:duration=first:normalize=1[aout]",
+            "-filter_complex", "[0:a][1:a]amix=inputs=2:duration=first:normalize=0[aout]",
             "-map", "0:v?",
             "-map", "[aout]",
             "-c:v", "copy",

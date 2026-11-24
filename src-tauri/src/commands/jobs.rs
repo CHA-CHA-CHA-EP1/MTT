@@ -38,6 +38,7 @@ pub fn create_job(
         error_message: None,
         title: None,
         folder_id: None,
+        notes: None,
     };
 
     {

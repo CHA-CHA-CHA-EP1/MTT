@@ -46,6 +46,7 @@ pub fn start_recording(
         error_message: None,
         title: None,
         folder_id: None,
+        notes: None,
     };
 
     {

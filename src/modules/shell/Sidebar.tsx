@@ -54,6 +54,8 @@ export function Sidebar({ spaceId, selectedJobId, onSelectJob }: SidebarProps) {
   const [editingJobId, setEditingJobId] = useState<string | null>(null);
   const [editJobTitle, setEditJobTitle] = useState("");
   const [movingJobId, setMovingJobId] = useState<string | null>(null);
+  const [confirmDeleteJobId, setConfirmDeleteJobId] = useState<string | null>(null);
+  const [confirmDeleteFolderId, setConfirmDeleteFolderId] = useState<string | null>(null);
 
   useEffect(() => {
     setActiveSpace(spaceId);
@@ -185,13 +187,32 @@ export function Sidebar({ spaceId, selectedJobId, onSelectJob }: SidebarProps) {
             </button>
           )}
           <button
-            onClick={() => remove(job.id)}
+            onClick={() => setConfirmDeleteJobId(job.id)}
             className="rounded p-0.5 text-muted-foreground hover:text-destructive"
           >
             <Trash2 className="h-3 w-3" />
           </button>
         </div>
       </div>
+      {confirmDeleteJobId === job.id && (
+        <div className="absolute left-2 right-2 z-10 mt-0.5 rounded border bg-popover p-2 shadow-md">
+          <p className="mb-2 text-xs text-foreground">Delete this meeting?</p>
+          <div className="flex justify-end gap-1">
+            <button
+              className="rounded px-2 py-0.5 text-xs hover:bg-accent"
+              onClick={(e) => { e.stopPropagation(); setConfirmDeleteJobId(null); }}
+            >
+              Cancel
+            </button>
+            <button
+              className="rounded bg-destructive px-2 py-0.5 text-xs text-white hover:bg-destructive/80"
+              onClick={(e) => { e.stopPropagation(); remove(job.id); setConfirmDeleteJobId(null); }}
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      )}
       {movingJobId === job.id && (
         <div className="absolute left-2 right-2 z-10 mt-0.5 rounded border bg-popover p-1 shadow-md">
           <p className="px-1 pb-1 text-[10px] text-muted-foreground">Move to folder</p>
@@ -288,11 +309,30 @@ export function Sidebar({ spaceId, selectedJobId, onSelectJob }: SidebarProps) {
                       <button onClick={() => { setEditingFolderId(folder.id); setEditFolderName(folder.name); }} className="rounded p-0.5 text-muted-foreground hover:text-foreground">
                         <Pencil className="h-3 w-3" />
                       </button>
-                      <button onClick={() => removeFolder(folder.id)} className="rounded p-0.5 text-muted-foreground hover:text-destructive">
+                      <button onClick={() => setConfirmDeleteFolderId(folder.id)} className="rounded p-0.5 text-muted-foreground hover:text-destructive">
                         <Trash2 className="h-3 w-3" />
                       </button>
                     </div>
                   </div>
+                  {confirmDeleteFolderId === folder.id && (
+                    <div className="mx-1 mt-0.5 rounded border bg-popover p-2 shadow-md">
+                      <p className="mb-2 text-xs text-foreground">Delete folder? Meetings will move to Inbox.</p>
+                      <div className="flex justify-end gap-1">
+                        <button
+                          className="rounded px-2 py-0.5 text-xs hover:bg-accent"
+                          onClick={() => setConfirmDeleteFolderId(null)}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          className="rounded bg-destructive px-2 py-0.5 text-xs text-white hover:bg-destructive/80"
+                          onClick={() => { removeFolder(folder.id); setConfirmDeleteFolderId(null); }}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  )}
                   {expanded && (
                     <div className="ml-4 mt-0.5 space-y-0.5">
                       {folderJobs.length === 0 ? (

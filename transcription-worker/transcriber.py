@@ -27,6 +27,7 @@ from protocol import (
 SR = 16_000
 MAX_CHUNK = 28 * SR
 BATCH_SIZE = 15
+_mlx_lock = threading.Lock()
 OVERLAP = 3
 GLOSSARY_TH = "การประชุม, สรุป, รายงาน, โปรเจกต์, ทีม, ผู้จัดการ, นักพัฒนา, ซอฟต์แวร์, แอปพลิเคชัน, ระบบ"
 GLOSSARY_EN = "meeting, summary, report, project, team, manager, developer, software, application, system"
@@ -60,10 +61,9 @@ def transcribe_file(
             ["ffmpeg", "-y", "-v", "error", "-i", file, "-vn", "-ac", "1", "-ar", str(SR), "-f", "f32le", tmp_path],
             check=True,
             stdin=subprocess.DEVNULL,
+            timeout=600,
         )
-        audio = np.fromfile(tmp_path, dtype=np.float32)
-        os.unlink(tmp_path)
-        tmp_path = None
+        audio = np.memmap(tmp_path, dtype=np.float32, mode='r')
 
         speech = get_speech_timestamps(
             torch.from_numpy(audio),
@@ -106,25 +106,27 @@ def transcribe_file(
             clip = audio[a:b]
             prompt = (glossary + " " + tail).strip()
 
-            r = mlx_whisper.transcribe(
-                clip,
-                path_or_hf_repo=whisper_model_path,
-                language=lang,
-                initial_prompt=prompt,
-                condition_on_previous_text=False,
-            )
-            text = r["text"].strip()
-            suspect = _ratio(text) > 2.8 or not text
-
-            if suspect:
+            with _mlx_lock:
                 r = mlx_whisper.transcribe(
                     clip,
                     path_or_hf_repo=whisper_model_path,
                     language=lang,
-                    initial_prompt=glossary,
+                    initial_prompt=prompt,
                     condition_on_previous_text=False,
-                    temperature=(0.2, 0.4, 0.6),
                 )
+            text = r["text"].strip()
+            suspect = _ratio(text) > 2.8 or not text
+
+            if suspect:
+                with _mlx_lock:
+                    r = mlx_whisper.transcribe(
+                        clip,
+                        path_or_hf_repo=whisper_model_path,
+                        language=lang,
+                        initial_prompt=glossary,
+                        condition_on_previous_text=False,
+                        temperature=(0.2, 0.4, 0.6),
+                    )
                 text = r["text"].strip()
                 suspect = _ratio(text) > 2.8 or not text
 
@@ -157,4 +159,7 @@ def transcribe_file(
         yield ErrorMessage(id=job_id, message=str(e))
     finally:
         if tmp_path and os.path.exists(tmp_path):
-            os.unlink(tmp_path)
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass

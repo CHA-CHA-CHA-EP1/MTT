@@ -8,6 +8,7 @@ interface SpaceStore {
   fetch: () => Promise<void>;
   create: (name: string) => Promise<string>;
   rename: (id: string, name: string) => Promise<void>;
+  pin: (id: string, pinned: boolean) => Promise<void>;
   remove: (id: string) => Promise<void>;
 }
 
@@ -30,6 +31,13 @@ export const useSpaceStore = create<SpaceStore>((set, get) => ({
   rename: async (id, name) => {
     await api.renameSpace(id, name);
     await get().fetch();
+  },
+
+  pin: async (id, pinned) => {
+    await api.pinSpace(id, pinned);
+    set((s) => ({ spaces: s.spaces.map((sp) => sp.id === id ? { ...sp, pinned } : sp) }));
+    // re-sort: pinned first
+    set((s) => ({ spaces: [...s.spaces].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0)) }));
   },
 
   remove: async (id) => {

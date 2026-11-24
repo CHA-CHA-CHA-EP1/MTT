@@ -263,6 +263,7 @@ final class Recorder: NSObject {
         }
         guard granted else {
             fputs("[swift] mic: permission denied\n", stderr)
+            emitError(id: jobId, message: "Microphone permission denied — grant access in System Settings → Privacy & Security → Microphone")
             return
         }
 
@@ -271,6 +272,7 @@ final class Recorder: NSObject {
         let inputFormat = inputNode.inputFormat(forBus: 0)
         guard inputFormat.channelCount > 0 else {
             fputs("[swift] mic: no input device\n", stderr)
+            emitError(id: jobId, message: "No microphone input device found")
             return
         }
 
@@ -295,7 +297,11 @@ final class Recorder: NSObject {
 
         inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [weak self] buffer, _ in
             guard let self, let file = self.micFile else { return }
-            do { try file.write(from: buffer) } catch {}
+            do {
+                try file.write(from: buffer)
+            } catch {
+                fputs("[swift] mic: write error: \(error)\n", stderr)
+            }
             let rms = self.computeRMS(buffer)
             self.lastMicLevel = rms
             self.emitLevelThrottled()
@@ -389,7 +395,9 @@ final class Recorder: NSObject {
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         micEngine = nil
-        micFile = nil   // closes + flushes the file
+        // nil-ing micFile calls AVAudioFile.deinit which flushes + closes the file.
+        // engine.stop() is synchronous so all tap callbacks have finished by this point.
+        micFile = nil
         fputs("[swift] mic stopped\n", stderr)
     }
 

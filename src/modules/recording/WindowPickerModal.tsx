@@ -26,7 +26,7 @@ export function WindowPickerModal({ onSelect, onClose }: Props) {
   const unlistenRef = useRef<(() => void) | null>(null);
 
   // Mic state
-  const [micEnabled, setMicEnabled] = useState(false);
+  const [micEnabled, setMicEnabled] = useState(true);
   const [micDevices, setMicDevices] = useState<MediaDeviceInfo[]>([]);
   const [micDeviceId, setMicDeviceId] = useState<string>("");
   const [micLevel, setMicLevel] = useState(0);

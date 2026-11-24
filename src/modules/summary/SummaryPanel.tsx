@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { X, Sparkles, RotateCcw, Copy, Check } from "lucide-react";
+import { X, Sparkles, RotateCcw, Copy, Check, Square } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   SummaryConfig,
+  cancelAiStream,
   generateSummary,
   getAiConfig,
   getJobSummary,
@@ -184,15 +185,24 @@ export function SummaryPanel({ jobId, onClose }: Props) {
           )}
 
           {view === "generating" ? (
-            <div
-              ref={streamRef}
-              className="flex-1 overflow-y-auto rounded-lg border bg-muted/30 p-3 text-xs leading-relaxed"
-            >
-              {summary
-                ? <span className="whitespace-pre-wrap text-muted-foreground">{summary}</span>
-                : <span className="animate-pulse text-muted-foreground">Generating...</span>
-              }
-            </div>
+            <>
+              <div
+                ref={streamRef}
+                className="flex-1 overflow-y-auto rounded-lg border bg-muted/30 p-3 text-xs leading-relaxed"
+              >
+                {summary
+                  ? <span className="whitespace-pre-wrap text-muted-foreground">{summary}</span>
+                  : <span className="animate-pulse text-muted-foreground">Generating...</span>
+                }
+              </div>
+              <button
+                onClick={() => cancelAiStream(jobId).catch(() => {})}
+                className="flex items-center justify-center gap-2 rounded-lg border px-4 py-2 text-xs font-medium text-muted-foreground hover:border-destructive hover:text-destructive"
+              >
+                <Square className="h-3 w-3 fill-current" />
+                Cancel
+              </button>
+            </>
           ) : (
             <button
               onClick={handleGenerate}

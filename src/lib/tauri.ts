@@ -10,6 +10,7 @@ export interface Space {
   id: string;
   name: string;
   created_at: number;
+  pinned: boolean;
 }
 
 export interface Folder {
@@ -73,6 +74,9 @@ export const getSpace = (id: string) =>
 export const renameSpace = (id: string, name: string) =>
   invoke<void>("rename_space", { id, name });
 
+export const pinSpace = (id: string, pinned: boolean) =>
+  invoke<void>("pin_space", { id, pinned });
+
 export const deleteSpace = (id: string) =>
   invoke<void>("delete_space", { id });
 
@@ -119,6 +123,12 @@ export const getJob = (id: string) =>
 
 export const renameMeeting = (id: string, title: string | null) =>
   invoke<void>("rename_meeting", { id, title });
+
+export const getJobNotes = (id: string) =>
+  invoke<string | null>("get_job_notes", { id });
+
+export const saveJobNotes = (id: string, notes: string) =>
+  invoke<void>("save_job_notes", { id, notes });
 
 // Segments
 export const getSegments = (jobId: string) =>

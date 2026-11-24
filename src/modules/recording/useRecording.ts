@@ -2,15 +2,18 @@ import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { startRecording, stopRecording, type WindowInfo, type MicOptions } from "@/lib/tauri";
 import { useWhisperStore } from "@/lib/whisperConfig";
+import { useRecordingStore } from "./recordingStore";
 
 interface RecordingState {
   jobId: string | null;
   elapsed: number;
+  windowId: number | null;
 }
 
 export function useRecording(spaceId: string | undefined, onJobCreated: (jobId: string) => void) {
-  const [state, setState] = useState<RecordingState>({ jobId: null, elapsed: 0 });
+  const [state, setState] = useState<RecordingState>({ jobId: null, elapsed: 0, windowId: null });
   const whisperModel = useWhisperStore((s) => s.model);
+  const setWindowId = useRecordingStore((s) => s.setWindowId);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Ref tracks current jobId so stop() never reads a stale closure value.
   const jobIdRef = useRef<string | null>(null);
@@ -22,10 +25,10 @@ export function useRecording(spaceId: string | undefined, onJobCreated: (jobId: 
   // Listen for recorder:stopped to clear recording state
   useEffect(() => {
     const unlisten = listen<{ id: string }>("recorder:stopped", (ev) => {
-      setState(s => s.jobId === ev.payload.id ? { jobId: null, elapsed: 0 } : s);
+      setState(s => { if (s.jobId === ev.payload.id) { setWindowId(null); return { jobId: null, elapsed: 0, windowId: null }; } return s; });
     });
     const unlistenErr = listen<{ id: string; message: string }>("recorder:error", (ev) => {
-      setState(s => s.jobId === ev.payload.id ? { jobId: null, elapsed: 0 } : s);
+      setState(s => { if (s.jobId === ev.payload.id) { setWindowId(null); return { jobId: null, elapsed: 0, windowId: null }; } return s; });
     });
     return () => {
       unlisten.then(fn => fn());
@@ -49,7 +52,8 @@ export function useRecording(spaceId: string | undefined, onJobCreated: (jobId: 
     if (!spaceId) return;
     try {
       const jobId = await startRecording(spaceId, window.id, window.title, whisperModel, micOptions.enabled, micOptions.deviceLabel);
-      setState({ jobId, elapsed: 0 });
+      setState({ jobId, elapsed: 0, windowId: window.id });
+      setWindowId(window.id);
       onJobCreated(jobId);
     } catch (e) {
       console.error("start recording failed:", e);
@@ -65,6 +69,7 @@ export function useRecording(spaceId: string | undefined, onJobCreated: (jobId: 
   return {
     isRecording: state.jobId !== null,
     recordingJobId: state.jobId,
+    recordingWindowId: state.windowId,
     elapsed: state.elapsed,
     start,
     stop,

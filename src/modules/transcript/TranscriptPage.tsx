@@ -1,18 +1,20 @@
 import { memo, forwardRef, useCallback, useEffect, useRef, useState, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Loader2, PanelRightClose, PanelRightOpen, Captions, CaptionsOff, Pencil, ScrollText, Copy, Check, Sparkles, Wand2, MessageSquare, Search, X, Square, AlertCircle, RefreshCw, Mic, MicOff, Monitor, Play } from "lucide-react";
+import { ArrowLeft, Loader2, PanelRightClose, PanelRightOpen, Captions, CaptionsOff, Pencil, ScrollText, Copy, Check, Sparkles, Wand2, MessageSquare, Search, X, Square, AlertCircle, RefreshCw, Mic, MicOff, Monitor, Play, NotebookPen } from "lucide-react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { useRecordingStore } from "@/modules/recording/recordingStore";
 import { useTranscriptStore } from "./transcriptStore";
 import { useWorkerEvents } from "@/common/hooks/useWorkerEvents";
 import { ThemeToggle } from "@/common/components/ThemeToggle";
 import { Player } from "./Player";
 import { DVRPlayer, DVRChunk } from "./DVRPlayer";
 import { cn, formatDuration } from "@/lib/utils";
-import { getJob, getAiConfig, updateSegment, searchSegmentsInJob, stopRecording, cancelJob, retranscribeJob, toggleMic, Segment } from "@/lib/tauri";
+import { getJob, getAiConfig, updateSegment, searchSegmentsInJob, stopRecording, cancelJob, retranscribeJob, toggleMic, captureWindowScreenshot, Segment } from "@/lib/tauri";
 import { SummaryPanel } from "@/modules/summary/SummaryPanel";
 import { CorrectionPanel } from "@/modules/correction/CorrectionPanel";
 import { ChatPanel } from "@/modules/chat/ChatPanel";
+import { NotesPanel } from "@/modules/notes/NotesPanel";
 
 const MIN_PCT = 20;
 const MAX_PCT = 80;
@@ -29,6 +31,7 @@ interface SegmentItemProps {
   isActive: boolean;
   isEditing: boolean;
   editText: string;
+  saveError: string | null;
   isLiveRecording: boolean;
   onSeek: (time: number) => void;
   onStartEdit: (seg: Segment) => void;
@@ -39,7 +42,7 @@ interface SegmentItemProps {
 
 const SegmentItem = memo(
   forwardRef<HTMLLIElement, SegmentItemProps>(
-    ({ seg, isActive, isEditing, editText, isLiveRecording, onSeek, onStartEdit, onSaveEdit, onCancelEdit, onEditTextChange }, ref) => {
+    ({ seg, isActive, isEditing, editText, saveError, isLiveRecording, onSeek, onStartEdit, onSaveEdit, onCancelEdit, onEditTextChange }, ref) => {
       const displayText = seg.corrected_text ?? seg.text;
       return (
         <li
@@ -75,6 +78,9 @@ const SegmentItem = memo(
                 rows={1}
                 className="w-full resize-none overflow-hidden rounded border bg-background px-2 py-1 text-sm leading-relaxed outline-none focus:ring-1 focus:ring-foreground/30"
               />
+              {saveError && (
+                <p className="text-xs text-destructive">{saveError}</p>
+              )}
               <div className="flex gap-1.5">
                 <button
                   onClick={() => onSaveEdit(seg.id)}
@@ -120,6 +126,7 @@ const SegmentItem = memo(
     prev.isActive === next.isActive &&
     prev.isEditing === next.isEditing &&
     prev.editText === next.editText &&
+    prev.saveError === next.saveError &&
     prev.isLiveRecording === next.isLiveRecording
 );
 
@@ -169,6 +176,7 @@ export function TranscriptPage({ jobId: jobIdProp, panelOpen: panelOpenProp, onP
   const [ccMenuOpen, setCcMenuOpen] = useState(false);
   const [editingSegId, setEditingSegId] = useState<number | null>(null);
   const [editText, setEditText] = useState("");
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [fullView, setFullView] = useState(false);
   const [copied, setCopied] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -177,12 +185,58 @@ export function TranscriptPage({ jobId: jobIdProp, panelOpen: panelOpenProp, onP
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [correctionOpen, setCorrectionOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(false);
   const [hasAiConfig, setHasAiConfig] = useState(false);
   const [jobStatus, setJobStatus] = useState<string>("pending");
   const [jobErrorMessage, setJobErrorMessage] = useState<string | null>(null);
   const [retranscribeLang, setRetranscribeLang] = useState<"th" | "en" | "auto">("th");
   const [isRetranscribing, setIsRetranscribing] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
+
+  // Live window preview
+  const recordingWindowId = useRecordingStore((s) => s.windowId);
+  const [previewSrc, setPreviewSrc] = useState<string | null>(null);
+  const previewUnlistenRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    if (!isLiveRecording || recordingWindowId == null) {
+      setPreviewSrc(null);
+      previewUnlistenRef.current?.();
+      previewUnlistenRef.current = null;
+      return;
+    }
+
+    let cancelled = false;
+    const setupListener = async () => {
+      const unlisten = await listen<{ path: string }>("recorder:screenshot", async (ev) => {
+        if (cancelled) return;
+        try {
+          const resp = await fetch(convertFileSrc(ev.payload.path), { cache: "no-store" });
+          const blob = await resp.blob();
+          const objUrl = URL.createObjectURL(blob);
+          setPreviewSrc((prev) => {
+            if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev);
+            return objUrl;
+          });
+        } catch { /* ignore */ }
+      });
+      previewUnlistenRef.current = unlisten;
+    };
+    setupListener();
+
+    captureWindowScreenshot(recordingWindowId).catch(() => {});
+    const interval = setInterval(() => {
+      captureWindowScreenshot(recordingWindowId).catch(() => {});
+    }, 3000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      previewUnlistenRef.current?.();
+      previewUnlistenRef.current = null;
+      setPreviewSrc((prev) => { if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev); return null; });
+    };
+  }, [isLiveRecording, recordingWindowId]);
 
   useEffect(() => {
     if (!jobId) return;
@@ -311,15 +365,21 @@ export function TranscriptPage({ jobId: jobIdProp, panelOpen: panelOpenProp, onP
   const startEdit = useCallback((seg: Segment) => {
     setEditingSegId(seg.id);
     setEditText(seg.corrected_text ?? seg.text);
+    setSaveError(null);
   }, []);
 
   const saveEdit = useCallback(async (segId: number) => {
-    await updateSegment(segId, editText.trim() || null);
-    setEditingSegId(null);
-    reload();
+    try {
+      await updateSegment(segId, editText.trim() || null);
+      setEditingSegId(null);
+      setSaveError(null);
+      reload();
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "Failed to save — please try again");
+    }
   }, [editText, reload]);
 
-  const cancelEdit = useCallback(() => setEditingSegId(null), []);
+  const cancelEdit = useCallback(() => { setEditingSegId(null); setSaveError(null); }, []);
 
   const handleStopRecording = useCallback(() => {
     if (jobId && !isStopping) {
@@ -538,7 +598,19 @@ export function TranscriptPage({ jobId: jobIdProp, panelOpen: panelOpenProp, onP
           </div>
 
           <button
-            onClick={() => { setSummaryOpen((v) => !v); setCorrectionOpen(false); setChatOpen(false); }}
+            onClick={() => { setNotesOpen((v) => !v); setSummaryOpen(false); setCorrectionOpen(false); setChatOpen(false); }}
+            title="Notes"
+            className={cn(
+              "flex items-center gap-1 rounded px-2 py-1.5 text-xs transition-colors",
+              notesOpen ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <NotebookPen className="h-3.5 w-3.5" />
+            <span>Notes</span>
+          </button>
+
+          <button
+            onClick={() => { setSummaryOpen((v) => !v); setCorrectionOpen(false); setChatOpen(false); setNotesOpen(false); }}
             disabled={!hasAiConfig || isLiveRecording}
             title={isLiveRecording ? "AI features unavailable during recording" : hasAiConfig ? "AI Summary" : "Set up AI in Settings first"}
             className={cn(
@@ -552,7 +624,7 @@ export function TranscriptPage({ jobId: jobIdProp, panelOpen: panelOpenProp, onP
           </button>
 
           <button
-            onClick={() => { setChatOpen((v) => !v); setSummaryOpen(false); setCorrectionOpen(false); }}
+            onClick={() => { setChatOpen((v) => !v); setSummaryOpen(false); setCorrectionOpen(false); setNotesOpen(false); }}
             disabled={!hasAiConfig || isLiveRecording}
             title={isLiveRecording ? "AI features unavailable during recording" : hasAiConfig ? "Chat with transcript" : "Set up AI in Settings first"}
             className={cn(
@@ -584,71 +656,78 @@ export function TranscriptPage({ jobId: jobIdProp, panelOpen: panelOpenProp, onP
           className="relative flex flex-col"
           style={{ width: panelOpen ? `${splitPct}%` : "100%" }}
         >
-          {isLiveRecording && liveChunks.length === 0 ? (
-            <div className="flex flex-1 flex-col items-center justify-center gap-5 bg-black text-white">
-              <div className="flex items-center gap-3">
-                <span className="relative flex h-3 w-3">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
-                  <span className="relative inline-flex h-3 w-3 rounded-full bg-red-500" />
-                </span>
-                <span className="text-base font-medium">Recording</span>
-                <span className="tabular-nums text-base text-white/70">{formatDuration(recordingElapsed)}</span>
-              </div>
-              <p className="max-w-xs truncate text-sm text-white/50">{title}</p>
-              <button
-                onClick={handleStopRecording}
-                disabled={isStopping}
-                className="flex items-center gap-2 rounded-lg border border-white/20 px-5 py-2.5 text-sm font-medium text-white/80 transition-colors hover:bg-white/10 disabled:opacity-50"
-              >
-                {isStopping
-                  ? <Loader2 className="h-4 w-4 animate-spin" />
-                  : <Square className="h-4 w-4 fill-current" />}
-                {isStopping ? "Stopping..." : "Stop Recording"}
-              </button>
-              {/* Audio level monitor */}
-              <div className="mt-4 flex flex-col gap-2 w-48">
-                {/* Mic */}
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={handleToggleMic}
-                    className={cn("rounded p-1 transition-colors", micEnabled ? "text-white/80 hover:text-white" : "text-white/30 hover:text-white/50")}
-                  >
-                    {micEnabled ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
-                  </button>
-                  <div className="flex h-2 flex-1 items-center gap-px">
-                    {Array.from({ length: 16 }, (_, i) => (
-                      <div
-                        key={i}
-                        className={cn(
-                          "flex-1 rounded-full transition-all duration-75",
-                          micEnabled && micLevel * 16 > i ? "bg-green-400" : "bg-white/20"
-                        )}
-                        style={{ height: micEnabled && micLevel * 16 > i ? "100%" : "35%" }}
-                      />
-                    ))}
+          {isLiveRecording ? (
+            <div className="relative flex flex-1 overflow-hidden bg-black">
+              {/* Live window preview — shown for entire duration of recording */}
+              {previewSrc ? (
+                <img
+                  src={previewSrc}
+                  key={previewSrc}
+                  alt="Live preview"
+                  className="h-full w-full object-contain"
+                />
+              ) : (
+                <div className="flex flex-1 items-center justify-center">
+                  <Loader2 className="h-6 w-6 animate-spin text-white/20" />
+                </div>
+              )}
+              {/* Overlay: recording indicator + controls */}
+              <div className="absolute bottom-0 left-0 right-0 flex items-end justify-between gap-3 bg-gradient-to-t from-black/80 to-transparent px-5 pb-5 pt-10">
+                {/* Audio levels */}
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleToggleMic}
+                      className={cn("rounded p-1 transition-colors", micEnabled ? "text-white/80 hover:text-white" : "text-white/30 hover:text-white/50")}
+                    >
+                      {micEnabled ? <Mic className="h-3.5 w-3.5" /> : <MicOff className="h-3.5 w-3.5" />}
+                    </button>
+                    <div className="flex h-1.5 w-24 items-center gap-px">
+                      {Array.from({ length: 16 }, (_, i) => (
+                        <div
+                          key={i}
+                          className={cn("flex-1 rounded-full transition-all duration-75", micEnabled && micLevel * 16 > i ? "bg-green-400" : "bg-white/20")}
+                          style={{ height: micEnabled && micLevel * 16 > i ? "100%" : "35%" }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Monitor className="h-3.5 w-3.5 text-white/50" />
+                    <div className="flex h-1.5 w-24 items-center gap-px">
+                      {Array.from({ length: 16 }, (_, i) => (
+                        <div
+                          key={i}
+                          className={cn("flex-1 rounded-full transition-all duration-75", systemLevel * 16 > i ? "bg-blue-400" : "bg-white/20")}
+                          style={{ height: systemLevel * 16 > i ? "100%" : "35%" }}
+                        />
+                      ))}
+                    </div>
                   </div>
                 </div>
-                {/* System audio */}
-                <div className="flex items-center gap-2">
-                  <Monitor className="h-4 w-4 text-white/50" />
-                  <div className="flex h-2 flex-1 items-center gap-px">
-                    {Array.from({ length: 16 }, (_, i) => (
-                      <div
-                        key={i}
-                        className={cn(
-                          "flex-1 rounded-full transition-all duration-75",
-                          systemLevel * 16 > i ? "bg-blue-400" : "bg-white/20"
-                        )}
-                        style={{ height: systemLevel * 16 > i ? "100%" : "35%" }}
-                      />
-                    ))}
+                {/* REC badge + stop */}
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="relative flex h-2.5 w-2.5">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
+                      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
+                    </span>
+                    <span className="tabular-nums text-sm font-medium text-white">{formatDuration(recordingElapsed)}</span>
                   </div>
+                  <button
+                    onClick={handleStopRecording}
+                    disabled={isStopping}
+                    className="flex items-center gap-2 rounded-lg border border-white/20 bg-black/40 px-4 py-2 text-xs font-medium text-white/80 backdrop-blur-sm transition-colors hover:bg-white/10 disabled:opacity-50"
+                  >
+                    {isStopping ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Square className="h-3.5 w-3.5 fill-current" />}
+                    {isStopping ? "Stopping..." : "Stop Recording"}
+                  </button>
                 </div>
               </div>
             </div>
           ) : (
             <div className="relative flex min-h-0 flex-1 flex-col">
-              {isLiveRecording ? (
+              {liveChunks.length > 0 ? (
                 <DVRPlayer
                   chunks={liveChunks}
                   chunkDuration={30}
@@ -661,53 +740,6 @@ export function TranscriptPage({ jobId: jobIdProp, panelOpen: panelOpenProp, onP
                   onTimeUpdate={setCurrentTime}
                   onSeek={handleSeekReady}
                 />
-              )}
-              {isLiveRecording && (
-                <div className="absolute left-3 top-3 flex flex-col gap-1.5 rounded-xl bg-black/70 px-3 py-2 backdrop-blur-sm">
-                  <div className="flex items-center gap-1.5">
-                    <span className="relative flex h-2 w-2">
-                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
-                      <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
-                    </span>
-                    <span className="text-xs font-medium text-white">REC {formatDuration(recordingElapsed)}</span>
-                  </div>
-                  {/* Mic row */}
-                  <div className="flex items-center gap-1.5">
-                    <button onClick={handleToggleMic} className="text-white/70 hover:text-white">
-                      {micEnabled
-                        ? <Mic className="h-3 w-3" />
-                        : <MicOff className="h-3 w-3 text-white/30" />}
-                    </button>
-                    <div className="flex h-1.5 w-20 items-center gap-0.5">
-                      {Array.from({ length: 12 }, (_, i) => (
-                        <div
-                          key={i}
-                          className={cn(
-                            "flex-1 rounded-full transition-all duration-75",
-                            micEnabled && micLevel * 12 > i ? "bg-green-400" : "bg-white/20"
-                          )}
-                          style={{ height: micEnabled && micLevel * 12 > i ? "100%" : "40%" }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                  {/* System audio row */}
-                  <div className="flex items-center gap-1.5">
-                    <Monitor className="h-3 w-3 text-white/70" />
-                    <div className="flex h-1.5 w-20 items-center gap-0.5">
-                      {Array.from({ length: 12 }, (_, i) => (
-                        <div
-                          key={i}
-                          className={cn(
-                            "flex-1 rounded-full transition-all duration-75",
-                            systemLevel * 12 > i ? "bg-blue-400" : "bg-white/20"
-                          )}
-                          style={{ height: systemLevel * 12 > i ? "100%" : "40%" }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                </div>
               )}
             </div>
           )}
@@ -877,6 +909,7 @@ export function TranscriptPage({ jobId: jobIdProp, panelOpen: panelOpenProp, onP
                     isActive={i === activeIdx}
                     isEditing={editingSegId === seg.id}
                     editText={editingSegId === seg.id ? editText : ""}
+                    saveError={editingSegId === seg.id ? saveError : null}
                     isLiveRecording={isLiveRecording}
                     onSeek={handleSeek}
                     onStartEdit={startEdit}
@@ -890,6 +923,9 @@ export function TranscriptPage({ jobId: jobIdProp, panelOpen: panelOpenProp, onP
           </div>
         )}
 
+        {notesOpen && jobId && (
+          <NotesPanel jobId={jobId} />
+        )}
         {summaryOpen && jobId && (
           <SummaryPanel jobId={jobId} onClose={() => setSummaryOpen(false)} />
         )}
