@@ -15,7 +15,12 @@ CREATE TABLE IF NOT EXISTS jobs (
     status           TEXT    NOT NULL DEFAULT 'pending',
     whisper_model    TEXT    NOT NULL,
     created_at       INTEGER NOT NULL,
-    recording_window TEXT
+    recording_window TEXT,
+    summary          TEXT,
+    error_message    TEXT,
+    space_id         TEXT,
+    folder_id        TEXT,
+    title            TEXT
 );
 
 CREATE TABLE IF NOT EXISTS spaces (
