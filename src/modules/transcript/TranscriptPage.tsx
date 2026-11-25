@@ -17,6 +17,7 @@ import { SummaryPanel } from "@/modules/summary/SummaryPanel";
 import { CorrectionPanel } from "@/modules/correction/CorrectionPanel";
 import { ChatPanel } from "@/modules/chat/ChatPanel";
 import { NotesPanel } from "@/modules/notes/NotesPanel";
+import { ZoomableContainer } from "@/common/components/ZoomableContainer";
 
 const MIN_PCT = 20;
 const MAX_PCT = 80;
@@ -685,12 +686,14 @@ export function TranscriptPage({ jobId: jobIdProp, panelOpen: panelOpenProp, onP
             <div className="relative flex flex-1 overflow-hidden bg-black">
               {/* Live window preview — shown for entire duration of recording */}
               {previewSrc ? (
-                <img
-                  src={previewSrc}
-                  key={previewSrc}
-                  alt="Live preview"
-                  className="h-full w-full object-contain"
-                />
+                <ZoomableContainer className="flex-1">
+                  <img
+                    src={previewSrc}
+                    key={previewSrc}
+                    alt="Live preview"
+                    className="max-h-full max-w-full object-contain"
+                  />
+                </ZoomableContainer>
               ) : (
                 <div className="flex flex-1 items-center justify-center">
                   <Loader2 className="h-6 w-6 animate-spin text-white/20" />

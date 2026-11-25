@@ -4,6 +4,7 @@ import {
   Volume2, VolumeX, ChevronDown,
 } from "lucide-react";
 import { cn, formatDuration } from "@/lib/utils";
+import { ZoomableContainer } from "@/common/components/ZoomableContainer";
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
@@ -125,7 +126,7 @@ export function Player({ src, onTimeUpdate, onSeek, onEnded, totalDuration, chun
   return (
     <div className="flex h-full flex-col bg-black">
       {/* Video */}
-      <div className="min-h-0 flex-1 flex items-center justify-center overflow-hidden">
+      <ZoomableContainer className="min-h-0 flex-1">
         <video
           ref={videoRef}
           src={src ?? undefined}
@@ -140,7 +141,7 @@ export function Player({ src, onTimeUpdate, onSeek, onEnded, totalDuration, chun
           onPause={() => setPlaying(false)}
           onEnded={() => { setPlaying(false); onEnded?.(); }}
         />
-      </div>
+      </ZoomableContainer>
 
       {/* Controls */}
       <div className="shrink-0 flex flex-col gap-2 bg-black/90 px-4 pb-3 pt-3">
