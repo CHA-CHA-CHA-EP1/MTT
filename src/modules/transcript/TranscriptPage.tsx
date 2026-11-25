@@ -11,6 +11,8 @@ import { Player } from "./Player";
 import { DVRPlayer, DVRChunk } from "./DVRPlayer";
 import { cn, formatDuration } from "@/lib/utils";
 import { getJob, getAiConfig, updateSegment, searchSegmentsInJob, stopRecording, cancelJob, retranscribeJob, toggleMic, captureWindowScreenshot, Segment } from "@/lib/tauri";
+import { ensureWorkerReady } from "@/lib/workerInit";
+import { useWhisperStore } from "@/lib/whisperConfig";
 import { SummaryPanel } from "@/modules/summary/SummaryPanel";
 import { CorrectionPanel } from "@/modules/correction/CorrectionPanel";
 import { ChatPanel } from "@/modules/chat/ChatPanel";
@@ -144,6 +146,7 @@ export function TranscriptPage({ jobId: jobIdProp, panelOpen: panelOpenProp, onP
   const navigate = useNavigate();
   const isEmbedded = !!jobIdProp;
   const { segments, loading, activeIdx, load, reload, appendNewSegments, clearSegments, setCurrentTime } = useTranscriptStore();
+  const { load: loadWhisperModel } = useWhisperStore();
 
   const activeRef = useRef<HTMLLIElement>(null);
   const seekRef = useRef<(time: number) => void>(() => {});
@@ -154,12 +157,13 @@ export function TranscriptPage({ jobId: jobIdProp, panelOpen: panelOpenProp, onP
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
   const [title, setTitle] = useState("Transcript");
   const [isLiveRecording, setIsLiveRecording] = useState(false);
-  const [micEnabled, setMicEnabled] = useState(true);
+  const [micEnabled, setMicEnabled] = useState(false);
   const [micLevel, setMicLevel] = useState(0);
   const [systemLevel, setSystemLevel] = useState(0);
   const [isStopping, setIsStopping] = useState(false);
   const [recordingElapsed, setRecordingElapsed] = useState(0);
   const elapsedIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const currentTimeRef = useRef<number>(0);
   const lastLevelRef = useRef(0);
   const [isRefining, setIsRefining] = useState(false);
   const [liveChunks, setLiveChunks] = useState<DVRChunk[]>([]);
@@ -214,6 +218,14 @@ export function TranscriptPage({ jobId: jobIdProp, panelOpen: panelOpenProp, onP
           const resp = await fetch(convertFileSrc(ev.payload.path), { cache: "no-store" });
           const blob = await resp.blob();
           const objUrl = URL.createObjectURL(blob);
+          // preload before swapping so there's no blank flash
+          await new Promise<void>((resolve) => {
+            const img = new Image();
+            img.onload = () => resolve();
+            img.onerror = () => resolve();
+            img.src = objUrl;
+          });
+          if (cancelled) { URL.revokeObjectURL(objUrl); return; }
           setPreviewSrc((prev) => {
             if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev);
             return objUrl;
@@ -260,10 +272,13 @@ export function TranscriptPage({ jobId: jobIdProp, panelOpen: panelOpenProp, onP
   // Recording elapsed timer
   useEffect(() => {
     if (isLiveRecording) {
-      elapsedIntervalRef.current = setInterval(
-        () => setRecordingElapsed((e) => e + 1),
-        1000
-      );
+      elapsedIntervalRef.current = setInterval(() => {
+        setRecordingElapsed((e) => {
+          const next = e + 1;
+          currentTimeRef.current = next;
+          return next;
+        });
+      }, 1000);
       setPanelOpen(false);
     } else {
       if (elapsedIntervalRef.current) clearInterval(elapsedIntervalRef.current);
@@ -362,6 +377,11 @@ export function TranscriptPage({ jobId: jobIdProp, panelOpen: panelOpenProp, onP
 
   const handleSeek = useCallback((time: number) => seekRef.current(time), []);
 
+  const handleTimeUpdate = useCallback((t: number) => {
+    currentTimeRef.current = t;
+    setCurrentTime(t);
+  }, [setCurrentTime]);
+
   const startEdit = useCallback((seg: Segment) => {
     setEditingSegId(seg.id);
     setEditText(seg.corrected_text ?? seg.text);
@@ -409,6 +429,8 @@ export function TranscriptPage({ jobId: jobIdProp, panelOpen: panelOpenProp, onP
     clearSegments();
     setIsRefining(true);
     try {
+      const model = await loadWhisperModel();
+      await ensureWorkerReady(model);
       await retranscribeJob(jobId, retranscribeLang);
     } catch (e) {
       console.error(e);
@@ -416,7 +438,7 @@ export function TranscriptPage({ jobId: jobIdProp, panelOpen: panelOpenProp, onP
       setIsRefining(false);
       setJobStatus("error");
     }
-  }, [jobId, isRetranscribing, retranscribeLang, clearSegments]);
+  }, [jobId, isRetranscribing, retranscribeLang, clearSegments, loadWhisperModel]);
 
   useEffect(() => {
     if (!searchQuery.trim() || !jobId) { setSearchResults([]); return; }
@@ -731,13 +753,13 @@ export function TranscriptPage({ jobId: jobIdProp, panelOpen: panelOpenProp, onP
                 <DVRPlayer
                   chunks={liveChunks}
                   chunkDuration={30}
-                  onTimeUpdate={setCurrentTime}
+                  onTimeUpdate={handleTimeUpdate}
                   onSeek={handleSeekReady}
                 />
               ) : (
                 <Player
                   src={videoSrc}
-                  onTimeUpdate={setCurrentTime}
+                  onTimeUpdate={handleTimeUpdate}
                   onSeek={handleSeekReady}
                 />
               )}
@@ -924,7 +946,12 @@ export function TranscriptPage({ jobId: jobIdProp, panelOpen: panelOpenProp, onP
         )}
 
         {notesOpen && jobId && (
-          <NotesPanel jobId={jobId} />
+          <NotesPanel
+            jobId={jobId}
+            currentTimeRef={currentTimeRef}
+            isLiveRecording={isLiveRecording}
+            onSeek={handleSeek}
+          />
         )}
         {summaryOpen && jobId && (
           <SummaryPanel jobId={jobId} onClose={() => setSummaryOpen(false)} />

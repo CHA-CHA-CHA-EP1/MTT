@@ -399,7 +399,7 @@ fn mix_mic_if_available(recording_path: &str) -> String {
             "-y",
             "-i", recording_path,
             "-i", mic_path.to_str().unwrap_or_default(),
-            "-filter_complex", "[0:a][1:a]amix=inputs=2:duration=first:normalize=0[aout]",
+            "-filter_complex", "[1:a]apad[a1];[0:a][a1]amix=inputs=2:duration=first:normalize=0[aout]",
             "-map", "0:v?",
             "-map", "[aout]",
             "-c:v", "copy",
@@ -482,9 +482,10 @@ fn handle_recorder_event(
                 queries::update_job_status(&conn, &id, "pending").ok();
             }
 
+            let event_path = if !transcribe_path.is_empty() { &transcribe_path } else { &final_path };
             app.emit("recorder:stopped", serde_json::json!({
                 "id": id,
-                "file_path": final_path,
+                "file_path": event_path,
                 "duration": duration,
             })).ok();
         }

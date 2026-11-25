@@ -19,6 +19,7 @@ final class Recorder: NSObject {
     // microphone capture
     private var micEngine: AVAudioEngine?
     private var micFile: AVAudioFile?
+    private var micMuted = false
     private var micDeviceLabel: String = ""
     private var lastSystemLevel: Float = 0
     private var lastMicLevel: Float = 0
@@ -269,6 +270,7 @@ final class Recorder: NSObject {
 
         let engine = AVAudioEngine()
         let inputNode = engine.inputNode  // access first to force lazy init before prepare()
+
         let inputFormat = inputNode.inputFormat(forBus: 0)
         guard inputFormat.channelCount > 0 else {
             fputs("[swift] mic: no input device\n", stderr)
@@ -277,7 +279,6 @@ final class Recorder: NSObject {
         }
 
         engine.prepare()
-        setInputDevice(label: deviceLabel, on: engine)
 
         let micPath = outputDir.appendingPathComponent("mic.caf")
         let settings: [String: Any] = [
@@ -295,19 +296,45 @@ final class Recorder: NSObject {
             return
         }
 
-        inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [weak self] buffer, _ in
+        let tapBlock: AVAudioNodeTapBlock = { [weak self] buffer, _ in
             guard let self, let file = self.micFile else { return }
+            if self.micMuted {
+                // Write silence to keep timeline aligned with video
+                if let silent = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: buffer.frameLength) {
+                    silent.frameLength = buffer.frameLength
+                    // floatChannelData is zeroed by default on init
+                    try? file.write(from: silent)
+                }
+                self.lastMicLevel = 0
+                self.emitLevelThrottled()
+                return
+            }
+            let rms = self.computeRMS(buffer)
+            self.lastMicLevel = rms
+            self.emitLevelThrottled()
             do {
                 try file.write(from: buffer)
             } catch {
                 fputs("[swift] mic: write error: \(error)\n", stderr)
             }
-            let rms = self.computeRMS(buffer)
-            self.lastMicLevel = rms
-            self.emitLevelThrottled()
         }
+
+        let installTap = {
+            inputNode.removeTap(onBus: 0)
+            inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat, block: tapBlock)
+        }
+        installTap()
+
         do {
             try engine.start()
+            if !deviceLabel.isEmpty {
+                // audioUnit is non-nil now — stop briefly to switch device without disruption
+                engine.stop()
+                setInputDevice(label: deviceLabel, on: engine)
+                // Reinstall tap: stop() may have removed it
+                installTap()
+                try engine.start()
+            }
             micEngine = engine
             fputs("[swift] mic started (rate=\(inputFormat.sampleRate) ch=\(inputFormat.channelCount))\n", stderr)
         } catch {
@@ -319,10 +346,15 @@ final class Recorder: NSObject {
 
     func toggleMic(enabled: Bool) async {
         if enabled {
-            guard micEngine == nil else { return }
-            await startMicRecording(deviceLabel: micDeviceLabel)
+            if micEngine != nil {
+                // Engine already running — just unmute
+                micMuted = false
+            } else {
+                micMuted = false
+                await startMicRecording(deviceLabel: micDeviceLabel)
+            }
         } else {
-            stopMicRecording()
+            micMuted = true
         }
     }
 
@@ -356,6 +388,38 @@ final class Recorder: NSObject {
         return min(rms, 1.0)
     }
 
+    /// Finds the CoreAudio AudioDeviceID for a given AVCaptureDevice UID by
+    /// enumerating all CoreAudio devices (avoids the broken CFString qualifier path).
+    private func coreAudioDeviceID(forUID targetUID: String) -> AudioDeviceID? {
+        var propAddr = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDevices,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var propSize: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject),
+                                             &propAddr, 0, nil, &propSize) == noErr else { return nil }
+        let count = Int(propSize) / MemoryLayout<AudioDeviceID>.size
+        var ids = [AudioDeviceID](repeating: AudioDeviceID(kAudioObjectUnknown), count: count)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject),
+                                         &propAddr, 0, nil, &propSize, &ids) == noErr else { return nil }
+
+        var uidAddr = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyDeviceUID,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        for id in ids {
+            var uid: CFString? = nil
+            var sz = UInt32(MemoryLayout<CFString?>.size)
+            if AudioObjectGetPropertyData(id, &uidAddr, 0, nil, &sz, &uid) == noErr,
+               let uid, (uid as String) == targetUID {
+                return id
+            }
+        }
+        return nil
+    }
+
     private func setInputDevice(label: String, on engine: AVAudioEngine) {
         guard !label.isEmpty else { return }
         guard let captureDevice = AVCaptureDevice.devices(for: .audio)
@@ -363,31 +427,18 @@ final class Recorder: NSObject {
             fputs("[swift] mic: device '\(label)' not found, using default\n", stderr)
             return
         }
-        let uid = captureDevice.uniqueID as CFString
-        var deviceID = AudioDeviceID(kAudioObjectUnknown)
-        var propAddr = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDeviceForUID,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var propSize = UInt32(MemoryLayout<AudioDeviceID>.size)
-        withUnsafePointer(to: uid) { uidPtr in
-            AudioObjectGetPropertyData(
-                AudioObjectID(kAudioObjectSystemObject),
-                &propAddr,
-                UInt32(MemoryLayout<CFString>.size),
-                uidPtr,
-                &propSize,
-                &deviceID
-            )
+        guard let deviceID = coreAudioDeviceID(forUID: captureDevice.uniqueID) else {
+            fputs("[swift] mic: CoreAudio lookup failed for '\(label)'\n", stderr)
+            return
         }
-        guard deviceID != AudioDeviceID(kAudioObjectUnknown),
-              let unit = engine.inputNode.audioUnit else { return }
+        guard let unit = engine.inputNode.audioUnit else {
+            fputs("[swift] mic: audioUnit nil, cannot set device '\(label)'\n", stderr)
+            return
+        }
         var id = deviceID
-        let status = AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice,
-                                           kAudioUnitScope_Global, 0,
-                                           &id, UInt32(MemoryLayout<AudioDeviceID>.size))
-        fputs("[swift] mic: set device '\(label)' status=\(status)\n", stderr)
+        AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice,
+                             kAudioUnitScope_Global, 0,
+                             &id, UInt32(MemoryLayout<AudioDeviceID>.size))
     }
 
     private func stopMicRecording() {
