@@ -49,6 +49,7 @@ def transcribe_file(
     corrector: Corrector,
     cancel_event: threading.Event,
     language: str = "th",
+    qwen3_model=None,
 ) -> Generator[OutgoingMessage, None, None]:
     tmp_path = None
     try:
@@ -104,42 +105,49 @@ def transcribe_file(
                 return
 
             clip = audio[a:b]
-            prompt = (glossary + " " + tail).strip()
+            offset = a / SR
+            chunk_duration = (b - a) / SR
 
-            with _mlx_lock:
-                r = mlx_whisper.transcribe(
-                    clip,
-                    path_or_hf_repo=whisper_model_path,
-                    language=lang,
-                    initial_prompt=prompt,
-                    condition_on_previous_text=False,
-                )
-            text = r["text"].strip()
-            suspect = _ratio(text) > 2.8 or not text
-
-            if suspect:
+            if qwen3_model is not None:
+                result = qwen3_model.transcribe(clip, language=language if language != "auto" else None)
+                text = result.text.strip()
+                suspect = _ratio(text) > 2.8 or not text
+                new_segs = [Segment(start=round(offset, 2), end=round(offset + chunk_duration, 2), text=text, suspect=suspect)] if text else []
+            else:
+                prompt = (glossary + " " + tail).strip()
                 with _mlx_lock:
                     r = mlx_whisper.transcribe(
                         clip,
                         path_or_hf_repo=whisper_model_path,
                         language=lang,
-                        initial_prompt=glossary,
+                        initial_prompt=prompt,
                         condition_on_previous_text=False,
-                        temperature=(0.2, 0.4, 0.6),
                     )
                 text = r["text"].strip()
                 suspect = _ratio(text) > 2.8 or not text
 
-            offset = a / SR
-            new_segs = [
-                Segment(
-                    start=round(offset + s["start"], 2),
-                    end=round(offset + s["end"], 2),
-                    text=s["text"].strip(),
-                    suspect=suspect,
-                )
-                for s in r["segments"]
-            ]
+                if suspect:
+                    with _mlx_lock:
+                        r = mlx_whisper.transcribe(
+                            clip,
+                            path_or_hf_repo=whisper_model_path,
+                            language=lang,
+                            initial_prompt=glossary,
+                            condition_on_previous_text=False,
+                            temperature=(0.2, 0.4, 0.6),
+                        )
+                    text = r["text"].strip()
+                    suspect = _ratio(text) > 2.8 or not text
+
+                new_segs = [
+                    Segment(
+                        start=round(offset + s["start"], 2),
+                        end=round(offset + s["end"], 2),
+                        text=s["text"].strip(),
+                        suspect=suspect,
+                    )
+                    for s in r["segments"]
+                ]
 
             if not suspect:
                 tail = text[-200:]

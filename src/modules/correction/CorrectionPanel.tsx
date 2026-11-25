@@ -33,6 +33,11 @@ export function CorrectionPanel({ jobId, onClose, onDone }: Props) {
     setProgress({ current: 0, total: 0 });
     setView("running");
 
+    const unlistenDebug = await listen<{ raw?: string; parse_error?: string }>(
+      "correction:debug",
+      (e) => { setError(`Debug: ${JSON.stringify(e.payload)}`); setView("config"); }
+    );
+
     const unlisten = await listen<{ job_id: string; current: number; total: number }>(
       "correction:progress",
       (e) => { if (e.payload.job_id === jobId) setProgress(e.payload); }
@@ -45,6 +50,7 @@ export function CorrectionPanel({ jobId, onClose, onDone }: Props) {
           setView("done");
           unlisten();
           unlistenDone();
+          unlistenDebug();
           onDone();
         }
       }
@@ -59,6 +65,7 @@ export function CorrectionPanel({ jobId, onClose, onDone }: Props) {
       setView("config");
       unlisten();
       unlistenDone();
+      unlistenDebug();
     }
   };
 

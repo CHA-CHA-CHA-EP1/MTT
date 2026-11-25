@@ -34,9 +34,15 @@ def _log(text: str) -> None:
     sys.stderr.flush()
 
 
-def _warmup(whisper_model_path: str) -> None:
+def _is_qwen3(model_id: str) -> bool:
+    return "Qwen3-ASR" in model_id or "qwen3-asr" in model_id.lower()
+
+
+def _warmup(model_path: str) -> None:
+    if _is_qwen3(model_path):
+        return  # from_pretrained in init is sufficient
     dummy = np.zeros(SR, dtype=np.float32)
-    mlx_whisper.transcribe(dummy, path_or_hf_repo=whisper_model_path, language="th")
+    mlx_whisper.transcribe(dummy, path_or_hf_repo=model_path, language="th")
 
 
 SR = 16_000
@@ -45,6 +51,7 @@ SR = 16_000
 def main() -> None:
     vad_model = None
     whisper_model_path: str | None = None
+    qwen3_model = None
     corrector: Corrector | None = None
     active_jobs: dict[str, threading.Event] = {}
     active_threads: list[threading.Thread] = []
@@ -66,7 +73,8 @@ def main() -> None:
                 if vad_model is None:
                     vad_model = load_silero_vad()
                     corrector = Corrector()
-                _warmup(msg.whisper_model)
+                if not _is_qwen3(msg.whisper_model):
+                    _warmup(msg.whisper_model)
                 whisper_model_path = msg.whisper_model
                 _emit(ReadyMessage())
             except Exception as e:
@@ -86,8 +94,13 @@ def main() -> None:
 
             lang = msg.language
 
-            def run(jid: str = job_id, fp: str = file_path, ce: threading.Event = cancel_event, lg: str = lang) -> None:
-                for out in transcribe_file(fp, jid, vad_model, whisper_model_path, corrector, ce, lg):
+            mp = whisper_model_path
+            def run(jid: str = job_id, fp: str = file_path, ce: threading.Event = cancel_event, lg: str = lang, mp: str = mp) -> None:
+                qm = None
+                if _is_qwen3(mp):
+                    from qwen3_asr_mlx import Qwen3ASR
+                    qm = Qwen3ASR.from_pretrained(mp)
+                for out in transcribe_file(fp, jid, vad_model, mp, corrector, ce, lg, qwen3_model=qm):
                     _emit(out)
                 active_jobs.pop(jid, None)
 

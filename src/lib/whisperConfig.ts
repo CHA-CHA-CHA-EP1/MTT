@@ -10,13 +10,18 @@ export interface WhisperModel {
 export const WHISPER_MODELS: WhisperModel[] = [
   {
     id: "mlx-community/whisper-large-v3-turbo",
-    label: "Large v3 Turbo",
+    label: "Whisper Large v3 Turbo",
     description: "Recommended — fast & accurate",
   },
   {
     id: "mlx-community/whisper-large-v3-mlx",
-    label: "Large v3",
-    description: "Best quality, slowest",
+    label: "Whisper Large v3",
+    description: "Best Whisper quality, slower",
+  },
+  {
+    id: "mlx-community/Qwen3-ASR-1.7B-bf16",
+    label: "Qwen3 ASR 1.7B",
+    description: "Better Thai/multilingual quality",
   },
 ];
 

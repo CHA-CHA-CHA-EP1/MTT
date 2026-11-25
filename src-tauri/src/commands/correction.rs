@@ -146,18 +146,35 @@ pub async fn correct_transcript(
             }
         };
 
+        // Strip markdown code fences if present (e.g. ```json ... ```)
+        let json_str = {
+            let trimmed = raw.trim();
+            if let Some(inner) = trimmed.strip_prefix("```json").or_else(|| trimmed.strip_prefix("```")) {
+                inner.trim_end_matches("```").trim()
+            } else {
+                trimmed
+            }
+        };
+
         // Parse JSON response
-        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&raw) {
-            if let Some(corrections) = parsed["corrections"].as_array() {
-                let conn = state.db.get()?;
-                for item in corrections {
-                    let id = item["id"].as_i64().unwrap_or(-1);
-                    let corrected = item["corrected"].as_str().unwrap_or("");
-                    if id >= 0 && !corrected.is_empty() {
-                        queries::set_segment_text(&conn, id, Some(corrected.to_string())).ok();
-                        corrected_count += 1;
+        match serde_json::from_str::<serde_json::Value>(json_str) {
+            Ok(parsed) => {
+                if let Some(corrections) = parsed["corrections"].as_array() {
+                    let conn = state.db.get()?;
+                    for item in corrections {
+                        let id = item["id"].as_i64().unwrap_or(-1);
+                        let corrected = item["corrected"].as_str().unwrap_or("");
+                        if id >= 0 && !corrected.is_empty() {
+                            queries::set_segment_text(&conn, id, Some(corrected.to_string())).ok();
+                            corrected_count += 1;
+                        }
                     }
+                } else {
+                    app.emit("correction:debug", serde_json::json!({ "raw": &json_str[..json_str.len().min(500)] })).ok();
                 }
+            }
+            Err(e) => {
+                app.emit("correction:debug", serde_json::json!({ "parse_error": e.to_string(), "raw": &json_str[..json_str.len().min(500)] })).ok();
             }
         }
     }

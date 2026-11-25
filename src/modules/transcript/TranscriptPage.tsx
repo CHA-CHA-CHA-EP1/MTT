@@ -185,6 +185,7 @@ export function TranscriptPage({ jobId: jobIdProp, panelOpen: panelOpenProp, onP
   const [saveError, setSaveError] = useState<string | null>(null);
   const [fullView, setFullView] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [copiedSrt, setCopiedSrt] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Segment[]>([]);
@@ -461,6 +462,23 @@ export function TranscriptPage({ jobId: jobIdProp, panelOpen: panelOpenProp, onP
     navigator.clipboard.writeText(fullText);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const toSrtTime = (s: number) => {
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = Math.floor(s % 60);
+    const ms = Math.round((s % 1) * 1000);
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")},${String(ms).padStart(3, "0")}`;
+  };
+
+  const handleCopySrt = () => {
+    const srt = segments
+      .map((s, i) => `${i + 1}\n${toSrtTime(s.start)} --> ${toSrtTime(s.end)}\n${s.corrected_text ?? s.text}`)
+      .join("\n\n");
+    navigator.clipboard.writeText(srt);
+    setCopiedSrt(true);
+    setTimeout(() => setCopiedSrt(false), 2000);
   };
 
   useEffect(() => {
@@ -801,6 +819,14 @@ export function TranscriptPage({ jobId: jobIdProp, panelOpen: panelOpenProp, onP
               <p className="text-xs text-muted-foreground">{segments.length} segments</p>
               {!isLiveRecording && (
                 <div className="flex items-center gap-1">
+                  <button
+                    onClick={handleCopySrt}
+                    title="Copy as SRT"
+                    className="flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {copiedSrt ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+                    {copiedSrt ? "Copied!" : "SRT"}
+                  </button>
                   {fullView && (
                     <button
                       onClick={handleCopy}
@@ -872,11 +898,6 @@ export function TranscriptPage({ jobId: jobIdProp, panelOpen: panelOpenProp, onP
               <div className="flex flex-1 items-center justify-center">
                 <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
               </div>
-            ) : isRefining ? (
-              <div className="flex flex-1 flex-col items-center justify-center gap-3">
-                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                <p className="text-xs text-muted-foreground">Improving transcript quality...</p>
-              </div>
             ) : jobStatus === "error" ? (
               <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
                 <AlertCircle className="h-8 w-8 text-destructive/70" />
@@ -928,25 +949,38 @@ export function TranscriptPage({ jobId: jobIdProp, panelOpen: panelOpenProp, onP
                 ))}
               </ul>
             ) : (
-              <ul className="flex-1 overflow-y-auto p-3 space-y-0.5">
-                {segments.map((seg, i) => (
-                  <SegmentItem
-                    key={seg.id}
-                    ref={i === activeIdx ? activeRef : null}
-                    seg={seg}
-                    isActive={i === activeIdx}
-                    isEditing={editingSegId === seg.id}
-                    editText={editingSegId === seg.id ? editText : ""}
-                    saveError={editingSegId === seg.id ? saveError : null}
-                    isLiveRecording={isLiveRecording}
-                    onSeek={handleSeek}
-                    onStartEdit={startEdit}
-                    onSaveEdit={saveEdit}
-                    onCancelEdit={cancelEdit}
-                    onEditTextChange={setEditText}
-                  />
-                ))}
-              </ul>
+              <div className="flex flex-1 flex-col overflow-hidden">
+                <ul className="flex-1 overflow-y-auto p-3 space-y-0.5">
+                  {segments.length === 0 && isRefining ? (
+                    <li className="flex h-20 items-center justify-center gap-2 text-xs text-muted-foreground">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      Transcribing...
+                    </li>
+                  ) : segments.map((seg, i) => (
+                    <SegmentItem
+                      key={seg.id}
+                      ref={i === activeIdx ? activeRef : null}
+                      seg={seg}
+                      isActive={i === activeIdx}
+                      isEditing={editingSegId === seg.id}
+                      editText={editingSegId === seg.id ? editText : ""}
+                      saveError={editingSegId === seg.id ? saveError : null}
+                      isLiveRecording={isLiveRecording}
+                      onSeek={handleSeek}
+                      onStartEdit={startEdit}
+                      onSaveEdit={saveEdit}
+                      onCancelEdit={cancelEdit}
+                      onEditTextChange={setEditText}
+                    />
+                  ))}
+                </ul>
+                {isRefining && segments.length > 0 && (
+                  <div className="flex shrink-0 items-center justify-center gap-1.5 border-t py-2 text-xs text-muted-foreground">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Transcribing...
+                  </div>
+                )}
+              </div>
             )}
           </div>
         )}
