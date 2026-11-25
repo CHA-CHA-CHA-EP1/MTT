@@ -1,21 +1,40 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams } from "react-router-dom";
-import { Settings } from "lucide-react";
+import { Settings, Search } from "lucide-react";
 import { Sidebar } from "./Sidebar";
 import { TranscriptPage } from "@/modules/transcript/TranscriptPage";
 import { ThemeToggle } from "@/common/components/ThemeToggle";
 import { SettingsModal } from "@/modules/settings/SettingsModal";
+import { SearchModal } from "@/modules/search/SearchModal";
 import { useSpaceStore } from "@/modules/spaces/spaceStore";
-import { useEffect } from "react";
 
 export function AppShell() {
   const { spaceId, jobId: routeJobId } = useParams<{ spaceId: string; jobId?: string }>();
   const [selectedJobId, setSelectedJobId] = useState<string | null>(routeJobId ?? null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [panelOpen, setPanelOpen] = useState(true);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [pendingSeek, setPendingSeek] = useState<number | undefined>(undefined);
   const { spaces, fetch } = useSpaceStore();
 
   useEffect(() => { fetch(); }, []);
+
+  // ⌘K to open search
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setSearchOpen((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
+  const handleSearchSelect = useCallback((result: import("@/lib/tauri").SearchResult) => {
+    setSelectedJobId(result.job_id);
+    setPendingSeek(result.start ?? undefined);
+  }, []);
 
   const space = spaces.find(s => s.id === spaceId);
 
@@ -31,6 +50,15 @@ export function AppShell() {
           <span className="text-xs text-muted-foreground">{space?.name ?? spaceId}</span>
         </div>
         <div className="flex items-center gap-1">
+          <button
+            onClick={() => setSearchOpen(true)}
+            className="flex items-center gap-1.5 rounded px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-accent"
+            title="Search (⌘K)"
+          >
+            <Search className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Search</span>
+            <kbd className="hidden sm:inline rounded border px-1 py-0.5 text-[10px] font-mono opacity-50">⌘K</kbd>
+          </button>
           <button onClick={() => setSettingsOpen(true)} className="rounded p-1.5 text-muted-foreground hover:text-foreground">
             <Settings className="h-4 w-4" />
           </button>
@@ -48,7 +76,7 @@ export function AppShell() {
 
         <main className="flex flex-1 overflow-hidden">
           {selectedJobId ? (
-            <TranscriptPage key={selectedJobId} jobId={selectedJobId} panelOpen={panelOpen} onPanelOpenChange={setPanelOpen} />
+            <TranscriptPage key={selectedJobId} jobId={selectedJobId} panelOpen={panelOpen} onPanelOpenChange={setPanelOpen} initialSeek={pendingSeek} />
           ) : (
             <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center text-muted-foreground">
               <p className="text-sm">Select a meeting to view the transcript</p>
@@ -59,6 +87,12 @@ export function AppShell() {
       </div>
 
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SearchModal
+        spaceId={spaceId}
+        open={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        onSelect={handleSearchSelect}
+      />
     </div>
   );
 }

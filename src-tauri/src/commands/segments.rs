@@ -1,6 +1,6 @@
 use tauri::State;
 
-use crate::db::queries::{self, Segment};
+use crate::db::queries::{self, SearchResult, Segment};
 use crate::error::AppError;
 use crate::state::AppState;
 
@@ -32,4 +32,16 @@ pub fn search_segments_in_job(state: State<AppState>, job_id: String, query: Str
 pub fn update_segment(state: State<AppState>, segment_id: i64, text: Option<String>) -> Result<(), AppError> {
     let conn = state.db.get()?;
     Ok(queries::set_segment_text(&conn, segment_id, text)?)
+}
+
+#[tauri::command]
+pub fn search_in_space(state: State<AppState>, space_id: String, query: String) -> Result<Vec<SearchResult>, AppError> {
+    let conn = state.db.get()?;
+    Ok(queries::search_in_space(&conn, &space_id, &query)?)
+}
+
+#[tauri::command]
+pub fn search_all_spaces(state: State<AppState>, query: String) -> Result<Vec<SearchResult>, AppError> {
+    let conn = state.db.get()?;
+    Ok(queries::search_all_spaces(&conn, &query)?)
 }

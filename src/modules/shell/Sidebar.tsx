@@ -172,7 +172,10 @@ export function Sidebar({ spaceId, selectedJobId, onSelectJob }: SidebarProps) {
             }}
           >
             <span className="truncate">{jobLabel(job)}</span>
-            <span className="text-[10px] text-muted-foreground/60">{formatTimestamp(job.created_at)}</span>
+            <span className="text-[10px] text-muted-foreground/60">
+              {formatTimestamp(job.created_at)}
+              {job.duration_secs != null && ` · ${formatDuration(job.duration_secs)}`}
+            </span>
           </div>
         )}
         <StatusIcon status={job.status} />

@@ -168,6 +168,8 @@ pub fn run() {
             commands::segments::search_segments,
             commands::segments::search_segments_in_job,
             commands::segments::update_segment,
+            commands::segments::search_in_space,
+            commands::segments::search_all_spaces,
             commands::settings::get_ai_config,
             commands::settings::save_ai_config,
             commands::settings::get_summary_config,
@@ -188,6 +190,7 @@ pub fn run() {
             commands::recording::stop_recording,
             commands::recording::capture_window_screenshot,
             commands::recording::toggle_mic,
+            commands::recording::get_storage_info,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -478,6 +481,9 @@ fn handle_recorder_event(
                 let db_path = if !transcribe_path.is_empty() { &transcribe_path } else { &final_path };
                 if !db_path.is_empty() {
                     queries::update_job_file_path(&conn, &id, db_path).ok();
+                }
+                if duration > 0.0 {
+                    queries::update_job_duration(&conn, &id, duration).ok();
                 }
                 queries::update_job_status(&conn, &id, "pending").ok();
             }

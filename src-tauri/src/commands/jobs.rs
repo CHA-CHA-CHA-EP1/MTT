@@ -39,6 +39,7 @@ pub fn create_job(
         title: None,
         folder_id: None,
         notes: None,
+        duration_secs: None,
     };
 
     {

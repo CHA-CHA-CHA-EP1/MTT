@@ -32,6 +32,7 @@ export interface Job {
   recording_window?: string | null;
   error_message?: string | null;
   title?: string | null;
+  duration_secs?: number | null;
 }
 
 export interface Segment {
@@ -143,6 +144,21 @@ export const searchSegments = (query: string) =>
 export const searchSegmentsInJob = (jobId: string, query: string) =>
   invoke<Segment[]>("search_segments_in_job", { jobId, query });
 
+export interface SearchResult {
+  job_id: string;
+  space_id: string;
+  job_title: string;
+  source: "transcript" | "notes";
+  snippet: string;
+  start: number | null;
+}
+
+export const searchInSpace = (spaceId: string, query: string) =>
+  invoke<SearchResult[]>("search_in_space", { spaceId, query });
+
+export const searchAllSpaces = (query: string) =>
+  invoke<SearchResult[]>("search_all_spaces", { query });
+
 export const updateSegment = (segmentId: number, text: string | null) =>
   invoke<void>("update_segment", { segmentId, text });
 
@@ -239,6 +255,14 @@ export const captureWindowScreenshot = (windowId: number) =>
 
 export const toggleMic = (id: string, enabled: boolean) =>
   invoke<void>("toggle_mic", { id, enabled });
+
+export interface StorageInfo {
+  path: string;
+  size_bytes: number;
+}
+
+export const getStorageInfo = () =>
+  invoke<StorageInfo>("get_storage_info");
 
 // Chat
 export interface ChatMessage { role: "user" | "assistant"; content: string; }

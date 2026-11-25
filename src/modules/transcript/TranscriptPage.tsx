@@ -138,9 +138,10 @@ interface TranscriptPageProps {
   jobId?: string;
   panelOpen?: boolean;
   onPanelOpenChange?: (open: boolean) => void;
+  initialSeek?: number;
 }
 
-export function TranscriptPage({ jobId: jobIdProp, panelOpen: panelOpenProp, onPanelOpenChange }: TranscriptPageProps = {}) {
+export function TranscriptPage({ jobId: jobIdProp, panelOpen: panelOpenProp, onPanelOpenChange, initialSeek }: TranscriptPageProps = {}) {
   const { projectId, jobId: jobIdParam } = useParams<{ projectId: string; jobId: string }>();
   const jobId = jobIdProp ?? jobIdParam;
   const navigate = useNavigate();
@@ -168,7 +169,7 @@ export function TranscriptPage({ jobId: jobIdProp, panelOpen: panelOpenProp, onP
   const [isRefining, setIsRefining] = useState(false);
   const [liveChunks, setLiveChunks] = useState<DVRChunk[]>([]);
   const [splitPct, setSplitPct] = useState(50);
-  const [panelOpenLocal, setPanelOpenLocal] = useState(true);
+  const [panelOpenLocal, setPanelOpenLocal] = useState(false);
   const panelOpen = panelOpenProp !== undefined ? panelOpenProp : panelOpenLocal;
   const setPanelOpen = useCallback((v: boolean | ((prev: boolean) => boolean)) => {
     const next = typeof v === "function" ? v(panelOpen) : v;
@@ -189,7 +190,7 @@ export function TranscriptPage({ jobId: jobIdProp, panelOpen: panelOpenProp, onP
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [correctionOpen, setCorrectionOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
-  const [notesOpen, setNotesOpen] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(true);
   const [hasAiConfig, setHasAiConfig] = useState(false);
   const [jobStatus, setJobStatus] = useState<string>("pending");
   const [jobErrorMessage, setJobErrorMessage] = useState<string | null>(null);
@@ -239,7 +240,7 @@ export function TranscriptPage({ jobId: jobIdProp, panelOpen: panelOpenProp, onP
     captureWindowScreenshot(recordingWindowId).catch(() => {});
     const interval = setInterval(() => {
       captureWindowScreenshot(recordingWindowId).catch(() => {});
-    }, 3000);
+    }, 1000);
 
     return () => {
       cancelled = true;
@@ -282,7 +283,6 @@ export function TranscriptPage({ jobId: jobIdProp, panelOpen: panelOpenProp, onP
       setPanelOpen(false);
     } else {
       if (elapsedIntervalRef.current) clearInterval(elapsedIntervalRef.current);
-      setPanelOpen(true);
     }
     return () => { if (elapsedIntervalRef.current) clearInterval(elapsedIntervalRef.current); };
   }, [isLiveRecording]);
@@ -373,7 +373,10 @@ export function TranscriptPage({ jobId: jobIdProp, panelOpen: panelOpenProp, onP
 
   const handleSeekReady = useCallback((seek: (time: number) => void) => {
     seekRef.current = seek;
-  }, []);
+    if (initialSeek != null) {
+      setTimeout(() => seek(initialSeek), 150);
+    }
+  }, [initialSeek]);
 
   const handleSeek = useCallback((time: number) => seekRef.current(time), []);
 

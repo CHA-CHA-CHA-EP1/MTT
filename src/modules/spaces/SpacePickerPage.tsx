@@ -1,11 +1,20 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Layers, Plus, Pencil, Trash2, Settings, Pin, PinOff } from "lucide-react";
+import { Layers, Plus, Pencil, Trash2, Settings, Pin, PinOff, HardDrive, FolderOpen, Search } from "lucide-react";
+import { openPath } from "@tauri-apps/plugin-opener";
 import { useSpaceStore } from "./spaceStore";
 import { ThemeToggle } from "@/common/components/ThemeToggle";
 import { SettingsModal } from "@/modules/settings/SettingsModal";
+import { SearchModal } from "@/modules/search/SearchModal";
 import { formatTimestamp } from "@/lib/utils";
-import type { Space } from "@/lib/tauri";
+import { getStorageInfo, type SearchResult, type Space, type StorageInfo } from "@/lib/tauri";
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  return `${(bytes / Math.pow(1024, i)).toFixed(i > 1 ? 1 : 0)} ${units[i]}`;
+}
 
 export function SpacePickerPage() {
   const navigate = useNavigate();
@@ -15,8 +24,26 @@ export function SpacePickerPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [storageInfo, setStorageInfo] = useState<StorageInfo | null>(null);
 
   useEffect(() => { fetch(); }, []);
+  useEffect(() => { getStorageInfo().then(setStorageInfo).catch(() => {}); }, []);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setSearchOpen((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
+  const handleSearchSelect = (result: SearchResult) => {
+    navigate(`/spaces/${result.space_id}/jobs/${result.job_id}`);
+  };
 
   const handleCreate = async () => {
     if (!newName.trim()) return;
@@ -43,6 +70,15 @@ export function SpacePickerPage() {
         </div>
         <div className="flex items-center gap-1">
           <button
+            onClick={() => setSearchOpen(true)}
+            className="flex items-center gap-1.5 rounded px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-accent"
+            title="Search (⌘K)"
+          >
+            <Search className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Search</span>
+            <kbd className="hidden sm:inline rounded border px-1 py-0.5 text-[10px] font-mono opacity-50">⌘K</kbd>
+          </button>
+          <button
             onClick={() => setSettingsOpen(true)}
             className="rounded p-1.5 text-muted-foreground hover:text-foreground"
           >
@@ -52,8 +88,30 @@ export function SpacePickerPage() {
         </div>
       </header>
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SearchModal open={searchOpen} onClose={() => setSearchOpen(false)} onSelect={handleSearchSelect} />
 
-      <div className="flex-1 overflow-y-auto px-6 pb-8 pt-8">
+      {/* Storage footer */}
+      {storageInfo && (
+        <div className="flex shrink-0 items-center justify-between border-t px-4 py-2">
+          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <HardDrive className="h-3 w-3" />
+            <span className="font-medium text-foreground">{formatBytes(storageInfo.size_bytes)}</span>
+            <span>used</span>
+            <span className="mx-1 opacity-30">·</span>
+            <span className="max-w-[280px] truncate opacity-60">{storageInfo.path}</span>
+          </div>
+          <button
+            onClick={() => openPath(storageInfo.path)}
+            className="flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-muted-foreground hover:text-foreground hover:bg-accent"
+            title="Reveal in Finder"
+          >
+            <FolderOpen className="h-3 w-3" />
+            Reveal
+          </button>
+        </div>
+      )}
+
+      <div className="flex-1 overflow-y-auto px-6 pb-4 pt-8">
         <div className="mb-6 flex items-end justify-between">
           <h1 className="text-xl font-semibold tracking-tight">Spaces</h1>
           <button

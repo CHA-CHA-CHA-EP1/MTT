@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use tauri::{AppHandle, Manager, State};
@@ -47,6 +48,7 @@ pub fn start_recording(
         title: None,
         folder_id: None,
         notes: None,
+        duration_secs: None,
     };
 
     {
@@ -86,4 +88,38 @@ pub fn toggle_mic(state: State<AppState>, id: String, enabled: bool) -> Result<(
     let _ = id; // reserved for future per-job targeting
     recorder.send(&RecorderCommand::ToggleMic { enabled })?;
     Ok(())
+}
+
+#[derive(serde::Serialize)]
+pub struct StorageInfo {
+    pub path: String,
+    pub size_bytes: u64,
+}
+
+fn dir_size(path: &PathBuf) -> u64 {
+    if !path.exists() { return 0; }
+    let mut total = 0u64;
+    if let Ok(entries) = std::fs::read_dir(path) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir() {
+                total += dir_size(&p);
+            } else if let Ok(meta) = p.metadata() {
+                total += meta.len();
+            }
+        }
+    }
+    total
+}
+
+#[tauri::command]
+pub fn get_storage_info(app: AppHandle) -> Result<StorageInfo, AppError> {
+    let recordings_dir = app.path().app_data_dir()
+        .map_err(|e| AppError::Other(format!("app_data_dir: {e}")))?
+        .join("recordings");
+    let size_bytes = dir_size(&recordings_dir);
+    Ok(StorageInfo {
+        path: recordings_dir.to_string_lossy().into_owned(),
+        size_bytes,
+    })
 }

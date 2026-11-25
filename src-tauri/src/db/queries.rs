@@ -39,6 +39,7 @@ pub struct Job {
     pub title: Option<String>,
     pub folder_id: Option<String>,
     pub notes: Option<String>,
+    pub duration_secs: Option<f64>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -196,6 +197,11 @@ pub fn update_job_status(conn: &Connection, id: &str, status: &str) -> Result<()
     Ok(())
 }
 
+pub fn update_job_duration(conn: &Connection, id: &str, duration_secs: f64) -> Result<()> {
+    conn.execute("UPDATE jobs SET duration_secs = ?1 WHERE id = ?2", params![duration_secs, id])?;
+    Ok(())
+}
+
 pub fn set_job_error(conn: &Connection, id: &str, message: &str) -> Result<()> {
     conn.execute(
         "UPDATE jobs SET status = 'error', error_message = ?1 WHERE id = ?2",
@@ -247,7 +253,7 @@ pub fn reset_interrupted_jobs(conn: &Connection, job_ids: &[String]) -> Result<(
 
 pub fn get_job(conn: &Connection, id: &str) -> Result<Option<Job>> {
     let mut stmt = conn.prepare(
-        "SELECT id, project_id, file_path, status, whisper_model, created_at, recording_window, error_message, title, folder_id, notes FROM jobs WHERE id = ?1",
+        "SELECT id, project_id, file_path, status, whisper_model, created_at, recording_window, error_message, title, folder_id, notes, duration_secs FROM jobs WHERE id = ?1",
     )?;
     let mut rows = stmt.query(params![id])?;
     if let Some(row) = rows.next()? {
@@ -263,6 +269,7 @@ pub fn get_job(conn: &Connection, id: &str) -> Result<Option<Job>> {
             title: row.get(8)?,
             folder_id: row.get(9)?,
             notes: row.get(10)?,
+            duration_secs: row.get(11)?,
         }))
     } else {
         Ok(None)
@@ -287,7 +294,7 @@ pub fn update_job_file_path(conn: &Connection, id: &str, file_path: &str) -> Res
 
 pub fn list_jobs_by_project(conn: &Connection, project_id: &str) -> Result<Vec<Job>> {
     let mut stmt = conn.prepare(
-        "SELECT id, project_id, file_path, status, whisper_model, created_at, recording_window, error_message, title, folder_id, notes
+        "SELECT id, project_id, file_path, status, whisper_model, created_at, recording_window, error_message, title, folder_id, notes, duration_secs
          FROM jobs WHERE project_id = ?1 ORDER BY created_at DESC",
     )?;
     let rows = stmt.query_map(params![project_id], |row| {
@@ -303,6 +310,7 @@ pub fn list_jobs_by_project(conn: &Connection, project_id: &str) -> Result<Vec<J
             title: row.get(8)?,
             folder_id: row.get(9)?,
             notes: row.get(10)?,
+            duration_secs: row.get(11)?,
         })
     })?;
     rows.collect()
@@ -315,7 +323,7 @@ pub fn delete_job(conn: &Connection, id: &str) -> Result<()> {
 
 pub fn list_jobs_by_space(conn: &Connection, space_id: &str) -> Result<Vec<Job>> {
     let mut stmt = conn.prepare(
-        "SELECT id, project_id, file_path, status, whisper_model, created_at, recording_window, error_message, title, folder_id, notes
+        "SELECT id, project_id, file_path, status, whisper_model, created_at, recording_window, error_message, title, folder_id, notes, duration_secs
          FROM jobs WHERE space_id = ?1 ORDER BY created_at DESC",
     )?;
     let rows = stmt.query_map(params![space_id], |row| {
@@ -331,6 +339,7 @@ pub fn list_jobs_by_space(conn: &Connection, space_id: &str) -> Result<Vec<Job>>
             title: row.get(8)?,
             folder_id: row.get(9)?,
             notes: row.get(10)?,
+            duration_secs: row.get(11)?,
         })
     })?;
     rows.collect()
@@ -559,6 +568,161 @@ pub fn search_segments(conn: &Connection, query: &str) -> Result<Vec<Segment>> {
     rows.collect()
 }
 
+// --- Unified space search ---
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SearchResult {
+    pub job_id: String,
+    pub space_id: String,
+    pub job_title: String,
+    pub source: String, // "transcript" | "notes"
+    pub snippet: String,
+    pub start: Option<f64>, // transcript only
+}
+
+fn fts_query(raw: &str) -> String {
+    raw.split_whitespace()
+        .filter_map(|w| {
+            let clean: String = w.chars().filter(|c| c.is_alphanumeric() || *c == '_').collect();
+            if clean.is_empty() { None } else { Some(format!("{}*", clean)) }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn extract_snippet(text: &str, query: &str, context_chars: usize) -> String {
+    let lower = text.to_lowercase();
+    let lower_q = query.to_lowercase();
+    let chars: Vec<char> = text.chars().collect();
+    let lower_chars: Vec<char> = lower.chars().collect();
+    let q_chars: Vec<char> = lower_q.chars().collect();
+    let pos = (0..lower_chars.len().saturating_sub(q_chars.len()))
+        .find(|&i| lower_chars[i..].starts_with(q_chars.as_slice()));
+    if let Some(p) = pos {
+        let start = p.saturating_sub(context_chars);
+        let end = (p + q_chars.len() + context_chars).min(chars.len());
+        let snippet: String = chars[start..end].iter().collect();
+        let mut result = String::new();
+        if start > 0 { result.push('…'); }
+        result.push_str(&snippet);
+        if end < chars.len() { result.push('…'); }
+        result
+    } else {
+        let s: String = chars.iter().take(context_chars * 2).collect();
+        if chars.len() > context_chars * 2 { format!("{}…", s) } else { s }
+    }
+}
+
+fn job_title_from(title: Option<String>, recording_window: Option<String>, file_path: String) -> String {
+    if let Some(t) = title.filter(|s| !s.is_empty()) { return t; }
+    if let Some(w) = recording_window.filter(|s| !s.is_empty()) { return w; }
+    std::path::Path::new(&file_path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(&file_path)
+        .to_string()
+}
+
+fn search_impl(conn: &Connection, space_id: Option<&str>, query: &str) -> Result<Vec<SearchResult>> {
+    if query.trim().is_empty() { return Ok(vec![]); }
+    let mut results = Vec::new();
+
+    // Transcript search via FTS
+    let fts_q = fts_query(query);
+    if !fts_q.is_empty() {
+        let (sql, rows) = if let Some(sid) = space_id {
+            let mut stmt = conn.prepare(
+                "SELECT s.job_id, j.space_id, s.start, COALESCE(s.corrected_text, s.text),
+                        j.title, j.recording_window, j.file_path
+                 FROM segments s
+                 JOIN segments_fts fts ON fts.rowid = s.id
+                 JOIN jobs j ON j.id = s.job_id
+                 WHERE segments_fts MATCH ?1 AND j.space_id = ?2
+                 ORDER BY rank LIMIT 20",
+            )?;
+            let r: Vec<_> = stmt.query_map(params![fts_q, sid], |row| {
+                Ok((row.get::<_,String>(0)?, row.get::<_,String>(1)?, row.get::<_,f64>(2)?,
+                    row.get::<_,String>(3)?, row.get::<_,Option<String>>(4)?,
+                    row.get::<_,Option<String>>(5)?, row.get::<_,String>(6)?))
+            })?.flatten().collect();
+            ((), r)
+        } else {
+            let mut stmt = conn.prepare(
+                "SELECT s.job_id, j.space_id, s.start, COALESCE(s.corrected_text, s.text),
+                        j.title, j.recording_window, j.file_path
+                 FROM segments s
+                 JOIN segments_fts fts ON fts.rowid = s.id
+                 JOIN jobs j ON j.id = s.job_id
+                 WHERE segments_fts MATCH ?1
+                 ORDER BY rank LIMIT 30",
+            )?;
+            let r: Vec<_> = stmt.query_map(params![fts_q], |row| {
+                Ok((row.get::<_,String>(0)?, row.get::<_,String>(1)?, row.get::<_,f64>(2)?,
+                    row.get::<_,String>(3)?, row.get::<_,Option<String>>(4)?,
+                    row.get::<_,Option<String>>(5)?, row.get::<_,String>(6)?))
+            })?.flatten().collect();
+            ((), r)
+        };
+        let _ = sql;
+        for (job_id, sid, start, text, title, rec_win, file_path) in rows {
+            results.push(SearchResult {
+                job_title: job_title_from(title, rec_win, file_path),
+                job_id,
+                space_id: sid,
+                source: "transcript".into(),
+                snippet: text,
+                start: Some(start),
+            });
+        }
+    }
+
+    // Notes search via LIKE
+    let like_q = format!("%{}%", query.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_"));
+    let rows: Vec<_> = if let Some(sid) = space_id {
+        let mut stmt = conn.prepare(
+            "SELECT id, space_id, notes, title, recording_window, file_path
+             FROM jobs
+             WHERE space_id = ?1 AND notes IS NOT NULL AND notes != ''
+                   AND LOWER(notes) LIKE LOWER(?2) ESCAPE '\\' LIMIT 10",
+        )?;
+        stmt.query_map(params![sid, like_q], |row| {
+            Ok((row.get::<_,String>(0)?, row.get::<_,String>(1)?, row.get::<_,String>(2)?,
+                row.get::<_,Option<String>>(3)?, row.get::<_,Option<String>>(4)?, row.get::<_,String>(5)?))
+        })?.flatten().collect()
+    } else {
+        let mut stmt = conn.prepare(
+            "SELECT id, space_id, notes, title, recording_window, file_path
+             FROM jobs
+             WHERE notes IS NOT NULL AND notes != ''
+                   AND LOWER(notes) LIKE LOWER(?1) ESCAPE '\\' LIMIT 15",
+        )?;
+        stmt.query_map(params![like_q], |row| {
+            Ok((row.get::<_,String>(0)?, row.get::<_,String>(1)?, row.get::<_,String>(2)?,
+                row.get::<_,Option<String>>(3)?, row.get::<_,Option<String>>(4)?, row.get::<_,String>(5)?))
+        })?.flatten().collect()
+    };
+    for (job_id, sid, notes, title, rec_win, file_path) in rows {
+        results.push(SearchResult {
+            job_title: job_title_from(title, rec_win, file_path),
+            job_id,
+            space_id: sid,
+            source: "notes".into(),
+            snippet: extract_snippet(&notes, query, 80),
+            start: None,
+        });
+    }
+
+    Ok(results)
+}
+
+pub fn search_in_space(conn: &Connection, space_id: &str, query: &str) -> Result<Vec<SearchResult>> {
+    search_impl(conn, Some(space_id), query)
+}
+
+pub fn search_all_spaces(conn: &Connection, query: &str) -> Result<Vec<SearchResult>> {
+    search_impl(conn, None, query)
+}
+
 // --- Tests ---
 
 #[cfg(test)]
@@ -588,6 +752,7 @@ mod tests {
             error_message: None,
             title: None,
             folder_id: None,
+            duration_secs: None,
         }
     }
 

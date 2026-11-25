@@ -30,6 +30,7 @@ pub fn new_pool(path: &str) -> Result<DbPool, DbError> {
         conn.execute("ALTER TABLE jobs ADD COLUMN title TEXT", []).ok();
         conn.execute("ALTER TABLE spaces ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0", []).ok();
         conn.execute("ALTER TABLE jobs ADD COLUMN notes TEXT", []).ok();
+        conn.execute("ALTER TABLE jobs ADD COLUMN duration_secs REAL", []).ok();
         // migrate existing projects → spaces (idempotent: INSERT OR IGNORE)
         conn.execute_batch(
             "INSERT OR IGNORE INTO spaces (id, name, created_at)

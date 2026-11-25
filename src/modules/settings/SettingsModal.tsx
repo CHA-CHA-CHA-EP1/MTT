@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { X, Loader2, AlertCircle } from "lucide-react";
+import { X, Loader2, AlertCircle, HardDrive, FolderOpen } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
-import { AiConfig, AiProvider, PROVIDER_DEFAULTS, getAiConfig, listAiModels, saveAiConfig, testAiConnection, initWorker } from "@/lib/tauri";
+import { openPath } from "@tauri-apps/plugin-opener";
+import { AiConfig, AiProvider, PROVIDER_DEFAULTS, StorageInfo, getAiConfig, getStorageInfo, listAiModels, saveAiConfig, testAiConnection, initWorker } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { WHISPER_MODELS, useWhisperStore } from "@/lib/whisperConfig";
 
@@ -11,6 +12,13 @@ interface Props {
 }
 
 const PROVIDERS: AiProvider[] = ["anthropic", "openai", "custom"];
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  return `${(bytes / Math.pow(1024, i)).toFixed(i > 1 ? 1 : 0)} ${units[i]}`;
+}
 
 export function SettingsModal({ open, onClose }: Props) {
   const [provider, setProvider] = useState<AiProvider>("anthropic");
@@ -28,6 +36,7 @@ export function SettingsModal({ open, onClose }: Props) {
   const [testError, setTestError] = useState("");
   const [models, setModels] = useState<string[]>([]);
   const [fetchingModels, setFetchingModels] = useState(false);
+  const [storageInfo, setStorageInfo] = useState<StorageInfo | null>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -43,6 +52,7 @@ export function SettingsModal({ open, onClose }: Props) {
       setBaseUrl(cfg.base_url ?? "");
       setModel(cfg.model);
     });
+    getStorageInfo().then(setStorageInfo).catch(() => {});
   }, [open]);
 
   const buildConfig = (): AiConfig => ({
@@ -286,6 +296,35 @@ export function SettingsModal({ open, onClose }: Props) {
             {testResult === "ok" ? "Connection successful ✓" : testError || "Connection failed"}
           </div>
         )}
+
+        {/* Storage */}
+        <div className="mt-6 border-t pt-5">
+          <p className="mb-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">Storage</p>
+          {storageInfo ? (
+            <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 min-w-0">
+                  <HardDrive className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <span className="text-sm font-medium">{formatBytes(storageInfo.size_bytes)}</span>
+                </div>
+                <button
+                  onClick={() => openPath(storageInfo.path)}
+                  className="flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-accent"
+                  title="Reveal in Finder"
+                >
+                  <FolderOpen className="h-3 w-3" />
+                  Reveal
+                </button>
+              </div>
+              <p className="text-[11px] text-muted-foreground break-all leading-relaxed">{storageInfo.path}</p>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Calculating...
+            </div>
+          )}
+        </div>
 
         <div className="mt-4 flex items-center justify-between">
           <button
