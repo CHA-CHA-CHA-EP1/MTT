@@ -150,7 +150,7 @@ export function SpacePickerPage() {
             {pinnedSpaces.length > 0 && (
               <div>
                 <p className="mb-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">Pinned</p>
-                <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8">
+                <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                   {pinnedSpaces.map((sp) => (
                     <SpaceCard
                       key={sp.id}
@@ -176,7 +176,7 @@ export function SpacePickerPage() {
                 {pinnedSpaces.length > 0 && (
                   <p className="mb-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">All Spaces</p>
                 )}
-                <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8">
+                <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                   {otherSpaces.map((sp) => (
                     <SpaceCard
                       key={sp.id}
@@ -244,7 +244,7 @@ function SpaceCard({
               className="w-full rounded border bg-background px-2 py-0.5 text-xs font-semibold outline-none focus:ring-1 focus:ring-foreground/30"
             />
           ) : (
-            <p className="truncate text-xs font-medium leading-snug">{space.name}</p>
+            <p className="break-words text-xs font-medium leading-snug">{space.name}</p>
           )}
           <p className="truncate text-[10px] text-muted-foreground">{formatTimestamp(space.created_at)}</p>
         </div>
