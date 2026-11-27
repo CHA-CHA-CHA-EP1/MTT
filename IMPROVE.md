@@ -126,6 +126,13 @@ await open("x-apple.systempreferences:com.apple.preference.security?Privacy_Scre
 เพิ่ม `corrected_by TEXT` (`NULL` | `'ai'` | `'user'`) → guard เป็น `WHERE corrected_by IS NULL OR corrected_by = 'ai'` → AI re-correct ได้เฉพาะของตัวเอง, manual edit ยังถูกปกป้อง  
 ต้อง migration + set provenance ในทั้ง user path (`set_segment_text`) และ AI path
 
+### QW14 — Fix 6 pre-existing test failures (baseline `cargo test` is perma-red)
+**ไฟล์:** `src-tauri/src/db/queries.rs` (test `setup()`), `src-tauri/src/worker/supervisor.rs` (fixture)  
+`cargo test` มี 6 failures จาก baseline `7ff78c1` (ไม่ใช่ regression จาก diff ไหน):
+- 4× `db::queries::tests`: `no such column: duration_secs` — `schema::CREATE_TABLES` ไม่มี column นี้ แต่ migrations เพิ่มทีหลัง; test `setup()` ใช้ `CREATE_TABLES` ตรงๆ ไม่รัน migrations → ต้องเพิ่ม `duration_secs` ใน `CREATE_TABLES` หรือให้ test `setup()` รัน migrations ตามหลัง
+- 2× `worker::supervisor::tests`: `fake_worker` BrokenPipe (fixture start ไม่ทันก่อน test วิ่ง) — อาจต้องเพิ่ม retry หรือ sleep ใน fixture
+การที่ `cargo test` แดงถาวรทำให้ catch regression ใน feature อื่นยาก — ควรแก้ให้กลับเขียวก่อนเพิ่ม test ใหม่
+
 ---
 
 ## 🏗️ Larger Redesigns (M-L effort — สัปดาห์)
