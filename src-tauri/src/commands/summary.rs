@@ -67,7 +67,7 @@ async fn stream_ai(
             }))
     };
 
-    req = req.header("content-type", "application/json");
+    req = config.with_extra_headers(req).header("content-type", "application/json");
 
     let resp = req.send().await.map_err(|e| AppError::Other(e.to_string()))?;
     let status = resp.status();

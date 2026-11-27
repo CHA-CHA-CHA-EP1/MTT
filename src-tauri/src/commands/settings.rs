@@ -18,9 +18,23 @@ pub struct AiConfig {
     pub api_key: String,
     pub base_url: Option<String>,
     pub model: String,
+    /// Extra HTTP headers sent with every AI request (e.g. `x-bf-vk` for Bifrost).
+    #[serde(default)]
+    pub extra_headers: Option<std::collections::HashMap<String, String>>,
 }
 
 impl AiConfig {
+    pub fn with_extra_headers(&self, mut req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        if let Some(h) = &self.extra_headers {
+            for (k, v) in h {
+                if !k.trim().is_empty() {
+                    req = req.header(k.trim(), v.trim());
+                }
+            }
+        }
+        req
+    }
+
     pub fn effective_base_url(&self) -> String {
         let url = match self.base_url.as_deref() {
             Some(u) if !u.is_empty() => u,
@@ -83,7 +97,11 @@ pub fn save_ai_config(app: AppHandle, config: AiConfig) -> Result<(), AppError> 
 
 #[tauri::command]
 pub async fn list_ai_models(config: AiConfig) -> Result<Vec<String>, AppError> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(15))
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| AppError::Other(e.to_string()))?;
     let base = config.effective_base_url();
 
     let mut req = client.get(format!("{base}/v1/models"));
@@ -93,6 +111,7 @@ pub async fn list_ai_models(config: AiConfig) -> Result<Vec<String>, AppError> {
     } else {
         req.bearer_auth(&config.api_key)
     };
+    req = config.with_extra_headers(req);
 
     let resp = req.send().await.map_err(|e| AppError::Other(e.to_string()))?;
     let status = resp.status();
@@ -141,7 +160,11 @@ pub fn save_whisper_model(app: AppHandle, model: String) -> Result<(), AppError>
 
 #[tauri::command]
 pub async fn test_ai_connection(config: AiConfig) -> Result<(), AppError> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(15))
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| AppError::Other(e.to_string()))?;
     let base = config.effective_base_url();
 
     // GET /v1/models — zero tokens, works for Anthropic + OpenAI-compatible (LiteLLM, Bifrost, etc.)
@@ -152,6 +175,7 @@ pub async fn test_ai_connection(config: AiConfig) -> Result<(), AppError> {
     } else {
         req.bearer_auth(&config.api_key)
     };
+    req = config.with_extra_headers(req);
 
     let resp = req.send().await.map_err(|e| AppError::Other(e.to_string()))?;
 

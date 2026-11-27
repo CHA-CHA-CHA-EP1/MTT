@@ -111,7 +111,8 @@ async fn do_chat_stream(
             .json(&body)
     };
 
-    let resp = req
+    let resp = config
+        .with_extra_headers(req)
         .header("content-type", "application/json")
         .send()
         .await

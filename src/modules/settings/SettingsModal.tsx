@@ -20,11 +20,24 @@ function formatBytes(bytes: number): string {
   return `${(bytes / Math.pow(1024, i)).toFixed(i > 1 ? 1 : 0)} ${units[i]}`;
 }
 
+function parseHeaders(text: string): Record<string, string> | undefined {
+  const out: Record<string, string> = {};
+  for (const line of text.split("\n")) {
+    const i = line.indexOf(":");
+    if (i <= 0) continue;
+    const k = line.slice(0, i).trim();
+    const v = line.slice(i + 1).trim();
+    if (k) out[k] = v;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
 export function SettingsModal({ open, onClose }: Props) {
   const [provider, setProvider] = useState<AiProvider>("anthropic");
   const [apiKey, setApiKey] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [model, setModel] = useState(PROVIDER_DEFAULTS.anthropic.model);
+  const [headersText, setHeadersText] = useState("");
   const { model: whisperModel, save: saveWhisper } = useWhisperStore();
   const [pendingWhisperModel, setPendingWhisperModel] = useState(whisperModel);
   const [reloading, setReloading] = useState(false);
@@ -51,6 +64,9 @@ export function SettingsModal({ open, onClose }: Props) {
       setApiKey(cfg.api_key);
       setBaseUrl(cfg.base_url ?? "");
       setModel(cfg.model);
+      setHeadersText(
+        Object.entries(cfg.extra_headers ?? {}).map(([k, v]) => `${k}: ${v}`).join("\n"),
+      );
     });
     getStorageInfo().then(setStorageInfo).catch(() => {});
   }, [open]);
@@ -60,6 +76,7 @@ export function SettingsModal({ open, onClose }: Props) {
     api_key: apiKey,
     base_url: provider === "custom" ? baseUrl || undefined : undefined,
     model,
+    extra_headers: provider === "custom" ? parseHeaders(headersText) : undefined,
   });
 
   const handleFetchModels = async () => {
@@ -245,6 +262,23 @@ export function SettingsModal({ open, onClose }: Props) {
                 onChange={(e) => setBaseUrl(e.target.value)}
                 placeholder="https://your-litellm.company.com/v1"
                 className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-foreground/30"
+              />
+            </div>
+          )}
+
+          {/* Extra headers — custom only */}
+          {provider === "custom" && (
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">
+                Extra headers (one per line, e.g. x-bf-vk: your-virtual-key)
+              </label>
+              <textarea
+                value={headersText}
+                onChange={(e) => setHeadersText(e.target.value)}
+                rows={2}
+                spellCheck={false}
+                placeholder="x-bf-vk: sk-bf-..."
+                className="w-full rounded-lg border bg-background px-3 py-2 font-mono text-xs outline-none focus:ring-1 focus:ring-foreground/30"
               />
             </div>
           )}

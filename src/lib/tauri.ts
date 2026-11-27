@@ -170,6 +170,7 @@ export interface AiConfig {
   api_key: string;
   base_url?: string;
   model: string;
+  extra_headers?: Record<string, string>;
 }
 
 export const PROVIDER_DEFAULTS: Record<AiProvider, { label: string; base_url?: string; model: string }> = {
