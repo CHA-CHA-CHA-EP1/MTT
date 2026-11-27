@@ -50,6 +50,8 @@ def transcribe_file(
     cancel_event: threading.Event,
     language: str = "th",
     qwen3_model=None,
+    chunk_offset_secs: float = 0.0,
+    start_idx: int = 0,
 ) -> Generator[OutgoingMessage, None, None]:
     tmp_path = None
     try:
@@ -96,7 +98,7 @@ def transcribe_file(
         # None = auto-detect; "auto" is not a valid mlx_whisper language code
         lang = None if language == "auto" else language
         tail = ""
-        seg_count = 0
+        seg_count = start_idx
         corrected_up_to = 0
 
         for i, (a, b) in enumerate(chunks):
@@ -151,6 +153,9 @@ def transcribe_file(
 
             if not suspect:
                 tail = text[-200:]
+
+            if chunk_offset_secs:
+                new_segs = [Segment(start=round(s.start + chunk_offset_secs, 2), end=round(s.end + chunk_offset_secs, 2), text=s.text, suspect=s.suspect) for s in new_segs]
 
             base_idx = seg_count
             seg_count += len(new_segs)

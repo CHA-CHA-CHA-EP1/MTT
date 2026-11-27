@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-type Theme = "light" | "dark" | "system";
+type Theme = "light" | "dark" | "system" | "blue";
 
 interface ThemeStore {
   theme: Theme;
@@ -28,6 +28,8 @@ export function useTheme() {
       root.classList.toggle("dark", dark);
     };
 
+    root.classList.toggle("blue", theme === "blue");
+
     if (theme === "system") {
       const mq = window.matchMedia("(prefers-color-scheme: dark)");
       applyDark(mq.matches);
@@ -35,7 +37,7 @@ export function useTheme() {
       mq.addEventListener("change", handler);
       return () => mq.removeEventListener("change", handler);
     } else {
-      applyDark(theme === "dark");
+      applyDark(theme === "dark" || theme === "blue");
     }
   }, [theme]);
 

@@ -1,10 +1,11 @@
-import { Moon, Sun, Monitor } from "lucide-react";
+import { Moon, Sun, Monitor, Droplets } from "lucide-react";
 import { useTheme } from "@/common/hooks/useTheme";
 import { cn } from "@/lib/utils";
 
 const options = [
   { value: "light", icon: Sun, label: "Light" },
   { value: "dark", icon: Moon, label: "Dark" },
+  { value: "blue", icon: Droplets, label: "Blue" },
   { value: "system", icon: Monitor, label: "System" },
 ] as const;
 

@@ -1,0 +1,345 @@
+{
+  "version": 1,
+  "jobId": "2ac27a45-502f-400d-a7d4-0c97e0e7ed33",
+  "sessionId": "5546de37-4370-4198-a443-042b89619a9e",
+  "scopeKey": "29fbef233df16e55a23ad72fe06820801bd8a08a1c76b99eaaec649cdbfa0185",
+  "revision": 60,
+  "createdAt": "2026-11-27T14:54:32.472Z",
+  "updatedAt": "2026-11-27T14:55:02.981Z",
+  "producerGraceExpiresAt": "2026-11-27T14:55:02.472Z",
+  "bestEffortDeadlineAt": "2026-11-27T14:55:55.472Z",
+  "producers": {
+    "core": {
+      "state": "sealed",
+      "intentKey": "e77b2a009d72983eb35d77d9264399adef97539b0137a61e1f96879fdce6cb4a",
+      "payloadDigest": "e77b2a009d72983eb35d77d9264399adef97539b0137a61e1f96879fdce6cb4a",
+      "sealedAt": "2026-11-27T14:55:02.615Z",
+      "sealedBy": "recovery"
+    },
+    "wiki": {
+      "state": "no-op",
+      "sealedAt": "2026-11-27T14:54:32.472Z",
+      "sealedBy": "wiki-producer"
+    }
+  },
+  "actions": {
+    "foreground-cleanup": {
+      "class": "required",
+      "phase": "deferred-required",
+      "status": "completed",
+      "attempts": 1,
+      "idempotencyKey": "febf6dba2f2536433960a07f7cedce72e946b43ced0896570df80f017b8914d2",
+      "payload": {
+        "transcriptPath": "/Users/chachacha/.claude/projects/-Users-chachacha-personal-jingjo-mtt/5546de37-4370-4198-a443-042b89619a9e.jsonl",
+        "cwd": "/Users/chachacha/personal/jingjo/mtt/transcription-worker",
+        "reason": "prompt_input_exit",
+        "input": {
+          "session_id": "5546de37-4370-4198-a443-042b89619a9e",
+          "transcript_path": "/Users/chachacha/.claude/projects/-Users-chachacha-personal-jingjo-mtt/5546de37-4370-4198-a443-042b89619a9e.jsonl",
+          "cwd": "/Users/chachacha/personal/jingjo/mtt/transcription-worker",
+          "hook_event_name": "SessionEnd",
+          "reason": "prompt_input_exit"
+        },
+        "initialTeamNames": [],
+        "openClawRouting": {},
+        "metrics": {
+          "session_id": "5546de37-4370-4198-a443-042b89619a9e",
+          "ended_at": "2026-11-27T14:55:02.553Z",
+          "reason": "prompt_input_exit",
+          "agents_spawned": 0,
+          "agents_completed": 0,
+          "modes_used": []
+        }
+      },
+      "budgetMs": 9000,
+      "claimedAt": "2026-11-27T14:55:02.487Z",
+      "runner": {
+        "attempt": 1,
+        "runnerNonce": "849705c5-e52b-4e5f-8f1f-c6bec632c028",
+        "phase": "terminal",
+        "deadlineAt": "2026-11-27T14:55:12.474Z"
+      },
+      "lastOutcomeCode": "completed",
+      "completedAt": "2026-11-27T14:55:02.614Z"
+    },
+    "wiki-capture": {
+      "class": "required",
+      "phase": "deferred-required",
+      "status": "completed",
+      "attempts": 0,
+      "idempotencyKey": "1719cd1ef5b51e0269b78c4cb8c9308c9c1f7b82fd1c067fc034c060f23863f5",
+      "payload": {},
+      "budgetMs": 9000,
+      "completedAt": "2026-11-27T14:54:32.472Z"
+    },
+    "team-cleanup": {
+      "class": "required",
+      "phase": "deferred-required",
+      "status": "completed",
+      "attempts": 1,
+      "idempotencyKey": "cee6ac31df545408e1e822247ac249b3f8182a98a5fe8e448ae3b251e55bdee1",
+      "payload": {
+        "transcriptPath": "/Users/chachacha/.claude/projects/-Users-chachacha-personal-jingjo-mtt/5546de37-4370-4198-a443-042b89619a9e.jsonl",
+        "cwd": "/Users/chachacha/personal/jingjo/mtt/transcription-worker",
+        "reason": "prompt_input_exit",
+        "input": {
+          "session_id": "5546de37-4370-4198-a443-042b89619a9e",
+          "transcript_path": "/Users/chachacha/.claude/projects/-Users-chachacha-personal-jingjo-mtt/5546de37-4370-4198-a443-042b89619a9e.jsonl",
+          "cwd": "/Users/chachacha/personal/jingjo/mtt/transcription-worker",
+          "hook_event_name": "SessionEnd",
+          "reason": "prompt_input_exit"
+        },
+        "initialTeamNames": [],
+        "openClawRouting": {},
+        "metrics": {
+          "session_id": "5546de37-4370-4198-a443-042b89619a9e",
+          "ended_at": "2026-11-27T14:55:02.553Z",
+          "reason": "prompt_input_exit",
+          "agents_spawned": 0,
+          "agents_completed": 0,
+          "modes_used": []
+        }
+      },
+      "budgetMs": 9000,
+      "claimedAt": "2026-11-27T14:55:02.618Z",
+      "runner": {
+        "attempt": 1,
+        "runnerNonce": "b89a1718-4c8b-47f7-bf5d-8978fa709373",
+        "phase": "terminal",
+        "deadlineAt": "2026-11-27T14:55:12.474Z"
+      },
+      "lastOutcomeCode": "completed",
+      "completedAt": "2026-11-27T14:55:02.663Z"
+    },
+    "python-cleanup": {
+      "class": "required",
+      "phase": "deferred-required",
+      "status": "completed",
+      "attempts": 1,
+      "idempotencyKey": "1f1370c4ac056606059d517e2f106b602d8cbcb04587b3fcc5f3b9f89e649cd0",
+      "payload": {
+        "transcriptPath": "/Users/chachacha/.claude/projects/-Users-chachacha-personal-jingjo-mtt/5546de37-4370-4198-a443-042b89619a9e.jsonl",
+        "cwd": "/Users/chachacha/personal/jingjo/mtt/transcription-worker",
+        "reason": "prompt_input_exit",
+        "input": {
+          "session_id": "5546de37-4370-4198-a443-042b89619a9e",
+          "transcript_path": "/Users/chachacha/.claude/projects/-Users-chachacha-personal-jingjo-mtt/5546de37-4370-4198-a443-042b89619a9e.jsonl",
+          "cwd": "/Users/chachacha/personal/jingjo/mtt/transcription-worker",
+          "hook_event_name": "SessionEnd",
+          "reason": "prompt_input_exit"
+        },
+        "initialTeamNames": [],
+        "openClawRouting": {},
+        "metrics": {
+          "session_id": "5546de37-4370-4198-a443-042b89619a9e",
+          "ended_at": "2026-11-27T14:55:02.553Z",
+          "reason": "prompt_input_exit",
+          "agents_spawned": 0,
+          "agents_completed": 0,
+          "modes_used": []
+        }
+      },
+      "budgetMs": 9000,
+      "claimedAt": "2026-11-27T14:55:02.666Z",
+      "runner": {
+        "attempt": 1,
+        "runnerNonce": "8519c244-9e1c-4a5d-afb8-df2116e5011e",
+        "phase": "terminal",
+        "deadlineAt": "2026-11-27T14:55:12.474Z"
+      },
+      "lastOutcomeCode": "completed",
+      "completedAt": "2026-11-27T14:55:02.721Z"
+    },
+    "reply-cleanup": {
+      "class": "required",
+      "phase": "deferred-required",
+      "status": "completed",
+      "attempts": 1,
+      "idempotencyKey": "0b3a8b47c28b26d56aca004d4f572b96c118f16819c0d35162418816f9a5420a",
+      "payload": {
+        "transcriptPath": "/Users/chachacha/.claude/projects/-Users-chachacha-personal-jingjo-mtt/5546de37-4370-4198-a443-042b89619a9e.jsonl",
+        "cwd": "/Users/chachacha/personal/jingjo/mtt/transcription-worker",
+        "reason": "prompt_input_exit",
+        "input": {
+          "session_id": "5546de37-4370-4198-a443-042b89619a9e",
+          "transcript_path": "/Users/chachacha/.claude/projects/-Users-chachacha-personal-jingjo-mtt/5546de37-4370-4198-a443-042b89619a9e.jsonl",
+          "cwd": "/Users/chachacha/personal/jingjo/mtt/transcription-worker",
+          "hook_event_name": "SessionEnd",
+          "reason": "prompt_input_exit"
+        },
+        "initialTeamNames": [],
+        "openClawRouting": {}
+      },
+      "budgetMs": 9000,
+      "claimedAt": "2026-11-27T14:55:02.724Z",
+      "runner": {
+        "attempt": 1,
+        "runnerNonce": "5b49a82e-4d2b-4246-a00f-58a407db5d8e",
+        "phase": "terminal",
+        "deadlineAt": "2026-11-27T14:55:12.474Z"
+      },
+      "lastOutcomeCode": "completed",
+      "completedAt": "2026-11-27T14:55:02.776Z"
+    },
+    "callback": {
+      "class": "best-effort",
+      "phase": "deferred-best-effort",
+      "status": "completed",
+      "attempts": 1,
+      "idempotencyKey": "d068ede2655bf89e0c0950e087d0603d7dcf45538e94f20a654d08c6f4841895",
+      "payload": {
+        "transcriptPath": "/Users/chachacha/.claude/projects/-Users-chachacha-personal-jingjo-mtt/5546de37-4370-4198-a443-042b89619a9e.jsonl",
+        "cwd": "/Users/chachacha/personal/jingjo/mtt/transcription-worker",
+        "reason": "prompt_input_exit",
+        "input": {
+          "session_id": "5546de37-4370-4198-a443-042b89619a9e",
+          "transcript_path": "/Users/chachacha/.claude/projects/-Users-chachacha-personal-jingjo-mtt/5546de37-4370-4198-a443-042b89619a9e.jsonl",
+          "cwd": "/Users/chachacha/personal/jingjo/mtt/transcription-worker",
+          "hook_event_name": "SessionEnd",
+          "reason": "prompt_input_exit"
+        },
+        "initialTeamNames": [],
+        "openClawRouting": {},
+        "metrics": {
+          "session_id": "5546de37-4370-4198-a443-042b89619a9e",
+          "ended_at": "2026-11-27T14:55:02.553Z",
+          "reason": "prompt_input_exit",
+          "agents_spawned": 0,
+          "agents_completed": 0,
+          "modes_used": []
+        }
+      },
+      "budgetMs": 2000,
+      "claimedAt": "2026-11-27T14:55:02.778Z",
+      "runner": {
+        "attempt": 1,
+        "runnerNonce": "edfbbd6f-cf20-4989-881e-69eb4feeaf13",
+        "phase": "terminal",
+        "deadlineAt": "2026-11-27T14:55:12.474Z"
+      },
+      "lastOutcomeCode": "completed",
+      "completedAt": "2026-11-27T14:55:02.820Z"
+    },
+    "notification": {
+      "class": "best-effort",
+      "phase": "deferred-best-effort",
+      "status": "completed",
+      "attempts": 1,
+      "idempotencyKey": "89c0438ff63097ce04beb60efb87292ff68a7af350a0ee331f3de9dbf42d62fc",
+      "payload": {
+        "transcriptPath": "/Users/chachacha/.claude/projects/-Users-chachacha-personal-jingjo-mtt/5546de37-4370-4198-a443-042b89619a9e.jsonl",
+        "cwd": "/Users/chachacha/personal/jingjo/mtt/transcription-worker",
+        "reason": "prompt_input_exit",
+        "input": {
+          "session_id": "5546de37-4370-4198-a443-042b89619a9e",
+          "transcript_path": "/Users/chachacha/.claude/projects/-Users-chachacha-personal-jingjo-mtt/5546de37-4370-4198-a443-042b89619a9e.jsonl",
+          "cwd": "/Users/chachacha/personal/jingjo/mtt/transcription-worker",
+          "hook_event_name": "SessionEnd",
+          "reason": "prompt_input_exit"
+        },
+        "initialTeamNames": [],
+        "openClawRouting": {},
+        "metrics": {
+          "session_id": "5546de37-4370-4198-a443-042b89619a9e",
+          "ended_at": "2026-11-27T14:55:02.553Z",
+          "reason": "prompt_input_exit",
+          "agents_spawned": 0,
+          "agents_completed": 0,
+          "modes_used": []
+        }
+      },
+      "budgetMs": 2000,
+      "claimedAt": "2026-11-27T14:55:02.823Z",
+      "runner": {
+        "attempt": 1,
+        "runnerNonce": "8f1e2ab7-8deb-457f-b337-a5b944b84cbc",
+        "phase": "terminal",
+        "deadlineAt": "2026-11-27T14:55:12.474Z"
+      },
+      "lastOutcomeCode": "completed",
+      "completedAt": "2026-11-27T14:55:02.863Z"
+    },
+    "openclaw": {
+      "class": "best-effort",
+      "phase": "deferred-best-effort",
+      "status": "completed",
+      "attempts": 1,
+      "idempotencyKey": "31fe8f6e1cf204e27006de511df257326fdd98655122ca437013e8779ffc735b",
+      "payload": {
+        "transcriptPath": "/Users/chachacha/.claude/projects/-Users-chachacha-personal-jingjo-mtt/5546de37-4370-4198-a443-042b89619a9e.jsonl",
+        "cwd": "/Users/chachacha/personal/jingjo/mtt/transcription-worker",
+        "reason": "prompt_input_exit",
+        "input": {
+          "session_id": "5546de37-4370-4198-a443-042b89619a9e",
+          "transcript_path": "/Users/chachacha/.claude/projects/-Users-chachacha-personal-jingjo-mtt/5546de37-4370-4198-a443-042b89619a9e.jsonl",
+          "cwd": "/Users/chachacha/personal/jingjo/mtt/transcription-worker",
+          "hook_event_name": "SessionEnd",
+          "reason": "prompt_input_exit"
+        },
+        "initialTeamNames": [],
+        "openClawRouting": {},
+        "metrics": {
+          "session_id": "5546de37-4370-4198-a443-042b89619a9e",
+          "ended_at": "2026-11-27T14:55:02.553Z",
+          "reason": "prompt_input_exit",
+          "agents_spawned": 0,
+          "agents_completed": 0,
+          "modes_used": []
+        }
+      },
+      "budgetMs": 2000,
+      "claimedAt": "2026-11-27T14:55:02.866Z",
+      "runner": {
+        "attempt": 1,
+        "runnerNonce": "69af01b3-3c16-45f7-9542-28ebb8da6ef2",
+        "phase": "terminal",
+        "deadlineAt": "2026-11-27T14:55:12.474Z"
+      },
+      "lastOutcomeCode": "completed",
+      "completedAt": "2026-11-27T14:55:02.907Z"
+    },
+    "spawn-next": {
+      "class": "best-effort",
+      "phase": "deferred-best-effort",
+      "status": "completed",
+      "attempts": 1,
+      "idempotencyKey": "408951e1348d4a381fd7b22db242636c91151ee01597146cf28243ae3875d0be",
+      "payload": {
+        "transcriptPath": "/Users/chachacha/.claude/projects/-Users-chachacha-personal-jingjo-mtt/5546de37-4370-4198-a443-042b89619a9e.jsonl",
+        "cwd": "/Users/chachacha/personal/jingjo/mtt/transcription-worker",
+        "reason": "prompt_input_exit",
+        "input": {
+          "session_id": "5546de37-4370-4198-a443-042b89619a9e",
+          "transcript_path": "/Users/chachacha/.claude/projects/-Users-chachacha-personal-jingjo-mtt/5546de37-4370-4198-a443-042b89619a9e.jsonl",
+          "cwd": "/Users/chachacha/personal/jingjo/mtt/transcription-worker",
+          "hook_event_name": "SessionEnd",
+          "reason": "prompt_input_exit"
+        },
+        "initialTeamNames": [],
+        "openClawRouting": {}
+      },
+      "budgetMs": 2000,
+      "claimedAt": "2026-11-27T14:55:02.910Z",
+      "runner": {
+        "attempt": 1,
+        "runnerNonce": "5260b9ca-55f7-48b4-9012-0268ebc8a478",
+        "phase": "terminal",
+        "deadlineAt": "2026-11-27T14:55:12.474Z"
+      },
+      "lastOutcomeCode": "completed",
+      "completedAt": "2026-11-27T14:55:02.977Z"
+    }
+  },
+  "owner": null,
+  "phase": "complete",
+  "recoverableFailure": {
+    "reason": "actions-settled",
+    "releasedAt": "2026-11-27T14:55:02.979Z",
+    "ownerNonce": "3ad0976e-8098-41eb-8289-a1c5bb3e3813"
+  },
+  "completion": {
+    "completedAt": "2026-11-27T14:55:02.979Z",
+    "terminalDigest": "0bf1f76fd7b8e20610c188aef8440311f9d7d01af08ae1bc38b8c28f1f1be1c6",
+    "terminalRevision": 59
+  }
+}

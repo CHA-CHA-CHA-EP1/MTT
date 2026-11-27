@@ -7,7 +7,21 @@
       "Bash(cargo build:*)",
       "WebSearch",
       "WebFetch(domain:stackoverflow.com)",
-      "Bash(grep -E \"\\\\.py$|\\\\.txt$|\\\\.toml$\")"
+      "Bash(grep -E \"\\\\.py$|\\\\.txt$|\\\\.toml$\")",
+      "Bash(node -)",
+      "Bash(node - arg1)",
+      "Bash(sed -n '75,90p' /Users/chachacha/personal/jingjo/mtt/src-tauri/src/commands/jobs.rs)",
+      "Bash(sed -n '208,222p' /Users/chachacha/personal/jingjo/mtt/src-tauri/src/worker/supervisor.rs)",
+      "Bash(sed -n '292,315p' /Users/chachacha/personal/jingjo/mtt/src/modules/transcript/TranscriptPage.tsx)",
+      "Bash(sed -n '328,345p' /Users/chachacha/personal/jingjo/mtt/src/modules/transcript/TranscriptPage.tsx)",
+      "Bash(sed -n '350,380p' /Users/chachacha/personal/jingjo/mtt/src/modules/transcript/TranscriptPage.tsx)",
+      "Bash(sed -n '410,425p' /Users/chachacha/personal/jingjo/mtt/src/modules/transcript/TranscriptPage.tsx)",
+      "Bash(pnpm tsc *)",
+      "mcp__plugin_oh-my-claudecode_t__state_list_active",
+      "mcp__plugin_oh-my-claudecode_t__state_write",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\('main.py'\\).read\\(\\)\\); print\\('main.py parses OK'\\)\")",
+      "Bash(./node_modules/.bin/tsc --noEmit -p .)",
+      "Bash(python3 -m py_compile main.py transcriber.py protocol.py)"
     ]
   }
 }

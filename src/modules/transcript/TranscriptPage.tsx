@@ -10,7 +10,7 @@ import { ThemeToggle } from "@/common/components/ThemeToggle";
 import { Player } from "./Player";
 import { DVRPlayer, DVRChunk } from "./DVRPlayer";
 import { cn, formatDuration } from "@/lib/utils";
-import { getJob, getAiConfig, updateSegment, searchSegmentsInJob, stopRecording, cancelJob, retranscribeJob, toggleMic, captureWindowScreenshot, Segment } from "@/lib/tauri";
+import { getJob, getAiConfig, updateSegment, searchSegmentsInJob, stopRecording, cancelJob, retranscribeJob, transcribeLiveChunk, toggleMic, captureWindowScreenshot, Segment } from "@/lib/tauri";
 import { ensureWorkerReady } from "@/lib/workerInit";
 import { useWhisperStore } from "@/lib/whisperConfig";
 import { SummaryPanel } from "@/modules/summary/SummaryPanel";
@@ -18,6 +18,7 @@ import { CorrectionPanel } from "@/modules/correction/CorrectionPanel";
 import { ChatPanel } from "@/modules/chat/ChatPanel";
 import { NotesPanel } from "@/modules/notes/NotesPanel";
 import { ZoomableContainer } from "@/common/components/ZoomableContainer";
+import { useVimModeState } from "@/lib/vimModeState";
 
 const MIN_PCT = 20;
 const MAX_PCT = 80;
@@ -199,6 +200,37 @@ export function TranscriptPage({ jobId: jobIdProp, panelOpen: panelOpenProp, onP
   const [retranscribeLang, setRetranscribeLang] = useState<"th" | "en" | "auto">("th");
   const [isRetranscribing, setIsRetranscribing] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [liveTranscribeEnabled, setLiveTranscribeEnabled] = useState(false);
+  const liveTranscribeEnabledRef = useRef(false);
+  const isWorkerBusyRef = useRef(false);
+  const isLiveRecordingRef = useRef(false);
+  const retranscribeLangRef = useRef<"th" | "en" | "auto">("th");
+  const pendingChunksRef = useRef<Array<{ path: string; offset: number }>>([]);
+  const [liveChunkPending, setLiveChunkPending] = useState(false);
+  const jobIdRef = useRef<string | undefined>(jobId);
+  useEffect(() => { jobIdRef.current = jobId; }, [jobId]);
+
+  // Drain next queued chunk (worker must be idle when called)
+  const drainNextChunk = useCallback(() => {
+    const jid = jobIdRef.current;
+    if (!jid) return;
+    const next = pendingChunksRef.current.shift();
+    if (!next) {
+      setLiveChunkPending(false);
+      return;
+    }
+    isWorkerBusyRef.current = true;
+    setLiveChunkPending(true);
+    loadWhisperModel()
+      .then((model) => ensureWorkerReady(model))
+      .then(() => transcribeLiveChunk(jid, next.path, next.offset, retranscribeLangRef.current))
+      .catch((e) => {
+        console.error("live chunk transcribe error:", e);
+        isWorkerBusyRef.current = false;
+        // Try the next one so a single failure doesn't stall the queue.
+        drainNextChunk();
+      });
+  }, [loadWhisperModel]);
 
   // Live window preview
   const recordingWindowId = useRecordingStore((s) => s.windowId);
@@ -289,6 +321,10 @@ export function TranscriptPage({ jobId: jobIdProp, panelOpen: panelOpenProp, onP
     return () => { if (elapsedIntervalRef.current) clearInterval(elapsedIntervalRef.current); };
   }, [isLiveRecording]);
 
+  useEffect(() => { liveTranscribeEnabledRef.current = liveTranscribeEnabled; }, [liveTranscribeEnabled]);
+  useEffect(() => { isLiveRecordingRef.current = isLiveRecording; }, [isLiveRecording]);
+  useEffect(() => { retranscribeLangRef.current = retranscribeLang; }, [retranscribeLang]);
+
   // Listen for recording stopped → switch to video player
   useEffect(() => {
     if (!jobId) return;
@@ -300,9 +336,17 @@ export function TranscriptPage({ jobId: jobIdProp, panelOpen: panelOpenProp, onP
       setMicLevel(0);
       setSystemLevel(0);
       if (ev.payload.file_path) setVideoSrc(convertFileSrc(ev.payload.file_path));
+      // Live mode: job is already "running" → will auto-transition to "done" via worker:done
+      // Non-live mode: show Transcribe button
+      if (!liveTranscribeEnabledRef.current) {
+        setJobStatus("pending");
+      } else if (!isWorkerBusyRef.current && pendingChunksRef.current.length > 0) {
+        // Final chunks may have arrived while worker was busy — drain now.
+        drainNextChunk();
+      }
     });
     return () => { unlisten.then((fn) => fn()); };
-  }, [jobId]);
+  }, [jobId, drainNextChunk]);
 
   // Listen for audio level updates during live recording
   useEffect(() => {
@@ -321,19 +365,24 @@ export function TranscriptPage({ jobId: jobIdProp, panelOpen: panelOpenProp, onP
     return () => { unlistenLevel.then((fn) => fn()); };
   }, [jobId]);
 
-  // Collect chunk file paths during live recording for DVR playback
+  // Collect chunk file paths during live recording for DVR playback.
+  // Queues every chunk when live transcribe is on — the queue drains sequentially
+  // via onDone/onError, so no chunks are dropped even when the worker is busy.
   useEffect(() => {
     if (!jobId) return;
     const unlisten = listen<{ id: string; index: number; path: string; offset: number }>("recorder:chunk_ready", (ev) => {
       if (ev.payload.id !== jobId) return;
       setLiveChunks((prev) => {
-        const next = [...prev];
+        const next = prev.slice();
         next[ev.payload.index] = { path: convertFileSrc(ev.payload.path), offset: ev.payload.offset };
         return next;
       });
+      if (!liveTranscribeEnabledRef.current) return;
+      pendingChunksRef.current.push({ path: ev.payload.path, offset: ev.payload.offset });
+      if (!isWorkerBusyRef.current) drainNextChunk();
     });
     return () => { unlisten.then((fn) => fn()); };
-  }, [jobId]);
+  }, [jobId, drainNextChunk]);
 
   // Listen for Pass 2 starting → clear draft segments, show refining state
   useEffect(() => {
@@ -347,27 +396,56 @@ export function TranscriptPage({ jobId: jobIdProp, panelOpen: panelOpenProp, onP
   }, [jobId]);
 
   useWorkerEvents({
-    onChunk: ({ id }) => { if (id === jobId) appendNewSegments(); },
+    onChunk: ({ id }) => { if (id === jobIdRef.current) appendNewSegments(); },
     onDone: ({ id }) => {
-      if (id !== jobId) return;
+      if (id !== jobIdRef.current) return;
+      isWorkerBusyRef.current = false;
+      if (isLiveRecordingRef.current || liveTranscribeEnabledRef.current) {
+        // Live mode: drain next queued chunk (keeps status as "recording")
+        drainNextChunk();
+        if (isLiveRecordingRef.current) return;
+      }
+      if (pendingChunksRef.current.length === 0) setLiveChunkPending(false);
       setIsRefining(false);
       setIsRetranscribing(false);
       setJobStatus("done");
     },
     onError: ({ id, message }) => {
-      if (id !== jobId) return;
+      if (id !== jobIdRef.current) return;
+      isWorkerBusyRef.current = false;
+      // In live mode, a single-chunk error shouldn't stall the queue.
+      if (isLiveRecordingRef.current && pendingChunksRef.current.length > 0) {
+        drainNextChunk();
+        return;
+      }
+      setLiveChunkPending(false);
       setIsRefining(false);
       setIsRetranscribing(false);
       setJobStatus("error");
       setJobErrorMessage(message);
     },
     onCancelled: ({ id }) => {
-      if (id !== jobId) return;
+      if (id !== jobIdRef.current) return;
+      isWorkerBusyRef.current = false;
+      pendingChunksRef.current = [];
+      setLiveChunkPending(false);
       setIsCancelling(false);
       setIsRetranscribing(false);
       setJobStatus("cancelled");
     },
   });
+
+  // Reset worker-busy state and drain the queue when Python crashes/respawns.
+  useEffect(() => {
+    const unlisten = listen("worker:crashed", () => {
+      isWorkerBusyRef.current = false;
+      pendingChunksRef.current = [];
+      setLiveChunkPending(false);
+      setIsRetranscribing(false);
+      setIsRefining(false);
+    });
+    return () => { unlisten.then((fn) => fn()); };
+  }, []);
 
   useEffect(() => {
     activeRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -423,6 +501,9 @@ export function TranscriptPage({ jobId: jobIdProp, panelOpen: panelOpenProp, onP
   const handleCancel = useCallback(() => {
     if (!jobId || isCancelling) return;
     setIsCancelling(true);
+    // Drop anything still queued locally so no new chunk is dispatched after
+    // cancellation. onCancelled will clear worker-busy state for us.
+    pendingChunksRef.current = [];
     cancelJob(jobId).catch(console.error);
   }, [jobId, isCancelling]);
 
@@ -452,6 +533,18 @@ export function TranscriptPage({ jobId: jobIdProp, panelOpen: panelOpenProp, onP
     }, 300);
     return () => clearTimeout(t);
   }, [searchQuery, jobId]);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "t" && e.key !== "T") return;
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement).isContentEditable) return;
+      if (useVimModeState.getState().isNormalMode) return;
+      setPanelOpen((v) => !v);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [setPanelOpen]);
 
   const fullText = useMemo(
     () => segments.map((s) => s.corrected_text ?? s.text).join(" "),
@@ -538,18 +631,35 @@ export function TranscriptPage({ jobId: jobIdProp, panelOpen: panelOpenProp, onP
         </div>
         <div className="flex items-center gap-1">
           {!isEmbedded && isLiveRecording && (
-            <button
-              onClick={handleStopRecording}
-              disabled={isStopping}
-              className="flex items-center gap-1.5 rounded-lg border border-destructive/50 bg-destructive/10 px-2.5 py-1.5 text-xs font-medium text-destructive transition-colors hover:bg-destructive/20 disabled:opacity-50"
-            >
-              {isStopping
-                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                : <Square className="h-3.5 w-3.5 fill-current" />}
-              {isStopping ? "Stopping..." : `Stop ${formatDuration(recordingElapsed)}`}
-            </button>
+            <>
+              <button
+                onClick={() => setLiveTranscribeEnabled((v) => !v)}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors",
+                  liveTranscribeEnabled
+                    ? "border-blue-500 bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                    : "text-muted-foreground hover:bg-accent"
+                )}
+                title={liveTranscribeEnabled ? "Live transcription on — click to disable" : "Enable live transcription"}
+              >
+                {liveTranscribeEnabled && liveChunkPending
+                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  : <Captions className="h-3.5 w-3.5" />}
+                {liveTranscribeEnabled && liveChunkPending ? "Transcribing…" : "Live"}
+              </button>
+              <button
+                onClick={handleStopRecording}
+                disabled={isStopping}
+                className="flex items-center gap-1.5 rounded-lg border border-destructive/50 bg-destructive/10 px-2.5 py-1.5 text-xs font-medium text-destructive transition-colors hover:bg-destructive/20 disabled:opacity-50"
+              >
+                {isStopping
+                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  : <Square className="h-3.5 w-3.5 fill-current" />}
+                {isStopping ? "Stopping..." : `Stop ${formatDuration(recordingElapsed)}`}
+              </button>
+            </>
           )}
-          {jobStatus === "running" && !isLiveRecording && (
+          {(jobStatus === "running" || liveChunkPending) && !isLiveRecording && (
             <button
               onClick={handleCancel}
               disabled={isCancelling}
@@ -760,6 +870,19 @@ export function TranscriptPage({ jobId: jobIdProp, panelOpen: panelOpenProp, onP
                     </span>
                     <span className="tabular-nums text-sm font-medium text-white">{formatDuration(recordingElapsed)}</span>
                   </div>
+                  <button
+                    onClick={() => setLiveTranscribeEnabled((v) => !v)}
+                    className={cn(
+                      "flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium backdrop-blur-sm transition-colors",
+                      liveTranscribeEnabled
+                        ? "border-blue-400/60 bg-blue-500/20 text-blue-300"
+                        : "border-white/20 bg-black/40 text-white/60 hover:bg-white/10"
+                    )}
+                    title={liveTranscribeEnabled ? "Live transcription on — click to disable" : "Enable live transcription"}
+                  >
+                    <Captions className="h-3.5 w-3.5" />
+                    Live
+                  </button>
                   <button
                     onClick={handleStopRecording}
                     disabled={isStopping}

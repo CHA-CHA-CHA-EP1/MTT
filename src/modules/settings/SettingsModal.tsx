@@ -5,6 +5,7 @@ import { openPath } from "@tauri-apps/plugin-opener";
 import { AiConfig, AiProvider, PROVIDER_DEFAULTS, StorageInfo, getAiConfig, getStorageInfo, listAiModels, saveAiConfig, testAiConnection, initWorker } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { WHISPER_MODELS, useWhisperStore } from "@/lib/whisperConfig";
+import { useEditorStore } from "@/lib/editorConfig";
 
 interface Props {
   open: boolean;
@@ -40,6 +41,8 @@ export function SettingsModal({ open, onClose }: Props) {
   const [headersText, setHeadersText] = useState("");
   const { model: whisperModel, save: saveWhisper } = useWhisperStore();
   const [pendingWhisperModel, setPendingWhisperModel] = useState(whisperModel);
+  const vimMode = useEditorStore((s) => s.vimMode);
+  const setVimMode = useEditorStore((s) => s.setVimMode);
   const [reloading, setReloading] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -330,6 +333,35 @@ export function SettingsModal({ open, onClose }: Props) {
             {testResult === "ok" ? "Connection successful ✓" : testError || "Connection failed"}
           </div>
         )}
+
+        {/* Editor */}
+        <div className="mt-6 border-t pt-5">
+          <p className="mb-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">Editor</p>
+          <div className="rounded-lg border bg-muted/30 p-3">
+            <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Notes</p>
+            <div className="flex items-center justify-between">
+              <span className="text-sm">Vim Mode</span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={vimMode}
+                onClick={() => setVimMode(!vimMode)}
+                className={cn(
+                  "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors",
+                  vimMode ? "bg-foreground border-foreground" : "bg-background border-muted-foreground/30"
+                )}
+              >
+                <span
+                  className={cn(
+                    "inline-block h-3.5 w-3.5 rounded-full bg-background shadow transition-transform",
+                    vimMode ? "translate-x-[18px] bg-background" : "translate-x-0.5 bg-muted-foreground"
+                  )}
+                />
+                <span className="sr-only">{vimMode ? "On" : "Off"}</span>
+              </button>
+            </div>
+          </div>
+        </div>
 
         {/* Storage */}
         <div className="mt-6 border-t pt-5">

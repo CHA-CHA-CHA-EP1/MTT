@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { Settings, Search } from "lucide-react";
 import { Sidebar } from "./Sidebar";
 import { TranscriptPage } from "@/modules/transcript/TranscriptPage";
@@ -7,8 +7,10 @@ import { ThemeToggle } from "@/common/components/ThemeToggle";
 import { SettingsModal } from "@/modules/settings/SettingsModal";
 import { SearchModal } from "@/modules/search/SearchModal";
 import { useSpaceStore } from "@/modules/spaces/spaceStore";
+import { useVimModeState } from "@/lib/vimModeState";
 
 export function AppShell() {
+  const navigate = useNavigate();
   const { spaceId, jobId: routeJobId } = useParams<{ spaceId: string; jobId?: string }>();
   const [selectedJobId, setSelectedJobId] = useState<string | null>(routeJobId ?? null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -19,17 +21,23 @@ export function AppShell() {
 
   useEffect(() => { fetch(); }, []);
 
-  // ⌘K to open search
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
         setSearchOpen((v) => !v);
+        return;
+      }
+      if (e.key === "u" || e.key === "U") {
+        const tag = (e.target as HTMLElement).tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement).isContentEditable) return;
+        if (useVimModeState.getState().isNormalMode) return;
+        navigate("/");
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, []);
+  }, [navigate]);
 
   const handleSearchSelect = useCallback((result: import("@/lib/tauri").SearchResult) => {
     setSelectedJobId(result.job_id);

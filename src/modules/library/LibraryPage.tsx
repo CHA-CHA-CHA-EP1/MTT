@@ -64,6 +64,17 @@ export function LibraryPage() {
     };
   }, []);
 
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== "u" && e.key !== "U") return;
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement).isContentEditable) return;
+      navigate("/");
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [navigate]);
+
   const { isRecording, elapsed, start, stop } = useRecording(projectId, (jobId) => {
     navigate(`/projects/${projectId}/jobs/${jobId}`);
   });

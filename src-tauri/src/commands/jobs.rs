@@ -81,6 +81,31 @@ pub fn retranscribe_job(
         file: file_path,
         mode: "offline".into(),
         language,
+        chunk_offset_secs: None,
+    })?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn transcribe_live_chunk(
+    state: State<AppState>,
+    job_id: String,
+    chunk_path: String,
+    chunk_offset_secs: f64,
+    language: String,
+) -> Result<(), AppError> {
+    if let Ok(conn) = state.db.get() {
+        conn.execute(
+            "UPDATE jobs SET status = 'running' WHERE id = ?1 AND status = 'recording'",
+            rusqlite::params![job_id],
+        ).ok();
+    }
+    state.worker.send(&IncomingMessage::TranscribeFile {
+        id: job_id,
+        file: chunk_path,
+        mode: "stream".into(),
+        language,
+        chunk_offset_secs: Some(chunk_offset_secs),
     })?;
     Ok(())
 }

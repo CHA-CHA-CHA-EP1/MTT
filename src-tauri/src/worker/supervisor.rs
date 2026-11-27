@@ -214,6 +214,7 @@ mod tests {
             file: "/tmp/test.mp4".into(),
             mode: "offline".into(),
             language: "th".into(),
+            chunk_offset_secs: None,
         }).unwrap();
         std::thread::sleep(std::time::Duration::from_millis(500));
 

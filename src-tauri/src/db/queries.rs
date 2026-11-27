@@ -752,6 +752,7 @@ mod tests {
             error_message: None,
             title: None,
             folder_id: None,
+            notes: None,
             duration_secs: None,
         }
     }

@@ -6,8 +6,11 @@ import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
 import { Copy, Check } from "lucide-react";
 import { getJobNotes, saveJobNotes } from "@/lib/tauri";
+import { useEditorStore } from "@/lib/editorConfig";
+import { useVimModeState } from "@/lib/vimModeState";
 import { TimestampNode, TimestampContext } from "./TimestampNode";
 import { createSlashCommand } from "./SlashCommand";
+import { VimExtension } from "./VimExtension";
 
 // Minimal markdown serializer for the content types we use
 function toMarkdown(html: string): string {
@@ -57,6 +60,7 @@ export function NotesPanel({
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
   const [copied, setCopied] = useState(false);
   const [width, setWidth] = useState(DEFAULT_WIDTH);
+  const vimMode = useEditorStore((s) => s.vimMode);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dragStartX = useRef<number | null>(null);
@@ -105,6 +109,7 @@ export function NotesPanel({
       TaskItem.configure({ nested: true }),
       TimestampNode,
       slashCommand,
+      ...(vimMode ? [VimExtension] : []),
     ],
     editorProps: {
       attributes: {
@@ -125,7 +130,10 @@ export function NotesPanel({
         }
       }, 800);
     },
-  });
+    onBlur: () => {
+      useVimModeState.getState().setNormalMode(false);
+    },
+  }, [vimMode]);
 
   // Load existing notes
   useEffect(() => {
@@ -185,7 +193,7 @@ export function NotesPanel({
 
         {/* Editor */}
         <div className="flex-1 overflow-y-auto">
-          <EditorContent editor={editor} className="h-full" />
+          <EditorContent key={String(vimMode)} editor={editor} className="h-full" />
         </div>
       </div>
     </TimestampContext.Provider>

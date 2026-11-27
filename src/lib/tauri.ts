@@ -107,6 +107,9 @@ export const cancelJob = (id: string) =>
 export const retranscribeJob = (id: string, language: string) =>
   invoke<void>("retranscribe_job", { id, language });
 
+export const transcribeLiveChunk = (jobId: string, chunkPath: string, chunkOffsetSecs: number, language: string) =>
+  invoke<void>("transcribe_live_chunk", { jobId, chunkPath, chunkOffsetSecs, language });
+
 export const deleteJob = (id: string) =>
   invoke<void>("delete_job", { id });
 

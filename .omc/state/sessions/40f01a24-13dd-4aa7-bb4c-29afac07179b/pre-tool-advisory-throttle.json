@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "entries": {
+    "ab2c45f1f4d50b9943a8cd6d1db4c56885e71118bcb6e4c685d8201ba2ef6a4f": {
+      "last_emitted_at_ms": 1795801738287,
+      "message": "Spawning agent: oh-my-claudecode:explore (inherit) | Task: Research current AI agent harnesses 2025"
+    },
+    "445ed27a3872b681d98190bae61ccb84954e1bc4e140df5370be958dee776b3a": {
+      "last_emitted_at_ms": 1795799130643,
+      "message": "Verify changes work after editing. Test functionality before marking complete."
+    },
+    "459c54e5f35d6a58dcd90d2aecc21fa6d1f35d241bc5b134c506f87dc7b6d67b": {
+      "last_emitted_at_ms": 1795799073017,
+      "message": "Combine searches in parallel when investigating multiple patterns."
+    },
+    "466399dafa2d20f60587180bad0a07358eb7f2bce724df0ff682f038ad33f5ad": {
+      "last_emitted_at_ms": 1795799065184,
+      "message": "Read multiple files in parallel when possible for faster analysis."
+    },
+    "79a93d4a2f8f50b95f852280616242fee1855dc99a3c75211917f55e72e95fae": {
+      "last_emitted_at_ms": 1795798305214,
+      "message": "Use parallel execution for independent tasks. Use run_in_background for long operations (npm install, builds, tests)."
+    },
+    "c9c5bc8bd0b36c0ee78ac1c3f4d9c2ec22f82d8ecf28790de0807e008757fd41": {
+      "last_emitted_at_ms": 1795798292372,
+      "message": "Spawning agent: oh-my-claudecode:executor (opus) | Task: Implement vim mode for notes panel"
+    }
+  },
+  "updated_at": "2026-11-27T17:48:58.287Z"
+}

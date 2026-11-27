@@ -1,0 +1,191 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1795786410429,
+  "projectRoot": "/Users/chachacha/personal/jingjo/mtt",
+  "techStack": {
+    "languages": [
+      {
+        "name": "JavaScript/TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "package.json"
+        ]
+      },
+      {
+        "name": "TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "tsconfig.json"
+        ]
+      },
+      {
+        "name": "C/C++",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "Makefile"
+        ]
+      }
+    ],
+    "frameworks": [
+      {
+        "name": "react",
+        "version": "19.1.0",
+        "category": "frontend"
+      },
+      {
+        "name": "react-dom",
+        "version": "19.1.0",
+        "category": "frontend"
+      },
+      {
+        "name": "vite",
+        "version": "8.0.16",
+        "category": "build"
+      }
+    ],
+    "packageManager": "pnpm",
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": "pnpm build",
+    "testCommand": "make test",
+    "lintCommand": null,
+    "devCommand": "pnpm dev",
+    "scripts": {
+      "dev": "vite",
+      "build": "tsc && vite build",
+      "preview": "vite preview",
+      "tauri": "tauri"
+    }
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "tests",
+      "public",
+      "src"
+    ],
+    "gitBranches": {
+      "defaultBranch": "main",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "transcription-worker": {
+      "path": "transcription-worker",
+      "purpose": null,
+      "fileCount": 5,
+      "lastAccessed": 1795786410425,
+      "keyFiles": [
+        "corrector.py",
+        "requirements.txt",
+        "transcriber.py",
+        "protocol.py",
+        "main.py"
+      ]
+    },
+    "tests": {
+      "path": "tests",
+      "purpose": "Test files",
+      "fileCount": 0,
+      "lastAccessed": 1795786410425,
+      "keyFiles": []
+    },
+    "public": {
+      "path": "public",
+      "purpose": "Public files",
+      "fileCount": 2,
+      "lastAccessed": 1795786410426,
+      "keyFiles": [
+        "vite.svg",
+        "tauri.svg"
+      ]
+    },
+    "screen-recorder": {
+      "path": "screen-recorder",
+      "purpose": null,
+      "fileCount": 3,
+      "lastAccessed": 1795786410426,
+      "keyFiles": [
+        "entitlements.plist",
+        "Package.swift",
+        "Info.plist"
+      ]
+    },
+    "src-tauri": {
+      "path": "src-tauri",
+      "purpose": null,
+      "fileCount": 6,
+      "lastAccessed": 1795786410426,
+      "keyFiles": [
+        "Cargo.toml",
+        "tauri.conf.json",
+        "Cargo.lock",
+        "build.rs",
+        "Info.plist"
+      ]
+    },
+    "src": {
+      "path": "src",
+      "purpose": "Source code",
+      "fileCount": 5,
+      "lastAccessed": 1795786410426,
+      "keyFiles": [
+        "App.tsx",
+        "main.tsx",
+        "App.css",
+        "vite-env.d.ts",
+        "globals.css"
+      ]
+    },
+    "transcription-worker/tests": {
+      "path": "transcription-worker/tests",
+      "purpose": "Test files",
+      "fileCount": 0,
+      "lastAccessed": 1795786410426,
+      "keyFiles": []
+    },
+    "tests/fixtures": {
+      "path": "tests/fixtures",
+      "purpose": "Test fixtures",
+      "fileCount": 1,
+      "lastAccessed": 1795786410427,
+      "keyFiles": [
+        "fake_worker.py"
+      ]
+    },
+    "src/lib": {
+      "path": "src/lib",
+      "purpose": "Library code",
+      "fileCount": 4,
+      "lastAccessed": 1795786410427,
+      "keyFiles": [
+        "whisperConfig.ts",
+        "utils.ts",
+        "workerInit.ts"
+      ]
+    },
+    "src/assets": {
+      "path": "src/assets",
+      "purpose": "Static assets",
+      "fileCount": 1,
+      "lastAccessed": 1795786410427,
+      "keyFiles": [
+        "react.svg"
+      ]
+    }
+  },
+  "hotPaths": [],
+  "userDirectives": []
+}

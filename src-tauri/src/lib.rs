@@ -157,6 +157,7 @@ pub fn run() {
             commands::jobs::create_job,
             commands::jobs::cancel_job,
             commands::jobs::retranscribe_job,
+            commands::jobs::transcribe_live_chunk,
             commands::jobs::delete_job,
             commands::jobs::list_jobs_by_project,
             commands::jobs::list_jobs_by_space,

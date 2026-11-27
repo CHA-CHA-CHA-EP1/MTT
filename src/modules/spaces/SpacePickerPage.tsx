@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Layers, Plus, Pencil, Trash2, Settings, Pin, PinOff, HardDrive, FolderOpen, Search } from "lucide-react";
 import { openPath } from "@tauri-apps/plugin-opener";
@@ -25,6 +25,7 @@ export function SpacePickerPage() {
   const [editName, setEditName] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [spaceSearchOpen, setSpaceSearchOpen] = useState(false);
   const [storageInfo, setStorageInfo] = useState<StorageInfo | null>(null);
 
   useEffect(() => { fetch(); }, []);
@@ -35,6 +36,13 @@ export function SpacePickerPage() {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
         setSearchOpen((v) => !v);
+        return;
+      }
+      if (e.key === "f" && !e.metaKey && !e.ctrlKey) {
+        const tag = (e.target as HTMLElement).tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement).isContentEditable) return;
+        e.preventDefault();
+        setSpaceSearchOpen(true);
       }
     };
     window.addEventListener("keydown", handler);
@@ -89,6 +97,7 @@ export function SpacePickerPage() {
       </header>
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <SearchModal open={searchOpen} onClose={() => setSearchOpen(false)} onSelect={handleSearchSelect} />
+      <SpaceSearchModal open={spaceSearchOpen} spaces={spaces} onClose={() => setSpaceSearchOpen(false)} onSelect={(id) => navigate(`/spaces/${id}`)} />
 
       {/* Storage footer */}
       {storageInfo && (
@@ -273,6 +282,73 @@ function SpaceCard({
         >
           <Trash2 className="h-3 w-3" />
         </button>
+      </div>
+    </div>
+  );
+}
+
+function SpaceSearchModal({ open, spaces, onClose, onSelect }: {
+  open: boolean;
+  spaces: Space[];
+  onClose: () => void;
+  onSelect: (id: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [activeIdx, setActiveIdx] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (open) { setQuery(""); setActiveIdx(0); setTimeout(() => inputRef.current?.focus(), 50); }
+  }, [open]);
+
+  const filtered = query.trim()
+    ? spaces.filter((s) => s.name.toLowerCase().includes(query.toLowerCase()))
+    : spaces;
+
+  useEffect(() => { setActiveIdx(0); }, [query]);
+
+  if (!open) return null;
+
+  const handleKey = (e: React.KeyboardEvent) => {
+    if (e.key === "ArrowDown") { e.preventDefault(); setActiveIdx((i) => Math.min(i + 1, filtered.length - 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setActiveIdx((i) => Math.max(i - 1, 0)); }
+    else if (e.key === "Enter") { if (filtered[activeIdx]) { onSelect(filtered[activeIdx].id); onClose(); } }
+    else if (e.key === "Escape") onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[20vh]" onClick={onClose}>
+      <div className="w-full max-w-sm rounded-xl border bg-popover shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2 border-b px-3 py-2.5">
+          <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={handleKey}
+            placeholder="Find space…"
+            className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+          />
+          <kbd className="rounded border px-1 py-0.5 text-[10px] font-mono text-muted-foreground opacity-50">F</kbd>
+        </div>
+        {filtered.length > 0 ? (
+          <ul className="max-h-64 overflow-y-auto py-1">
+            {filtered.map((sp, i) => (
+              <li key={sp.id}>
+                <button
+                  className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors ${i === activeIdx ? "bg-accent text-accent-foreground" : "hover:bg-accent"}`}
+                  onMouseEnter={() => setActiveIdx(i)}
+                  onClick={() => { onSelect(sp.id); onClose(); }}
+                >
+                  <Layers className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  {sp.name}
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="px-3 py-4 text-center text-xs text-muted-foreground">No spaces found</p>
+        )}
       </div>
     </div>
   );
