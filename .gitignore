@@ -37,3 +37,9 @@ __pycache__/
 # OMC runtime state (session data, checkpoints, agent logs)
 .omc/
 !.omc/skills/
+
+# E2E QA harness artifacts (standalone scripts, see tests/e2e/README.md)
+tests/e2e/shots/
+tests/e2e/node_modules/
+tests/e2e/package.json
+tests/e2e/bun.lock
