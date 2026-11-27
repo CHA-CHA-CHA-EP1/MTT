@@ -8,6 +8,7 @@ import { Copy, Check } from "lucide-react";
 import { getJobNotes, saveJobNotes } from "@/lib/tauri";
 import { useEditorStore } from "@/lib/editorConfig";
 import { useVimModeState } from "@/lib/vimModeState";
+import { cn } from "@/lib/utils";
 import { TimestampNode, TimestampContext } from "./TimestampNode";
 import { createSlashCommand } from "./SlashCommand";
 import { VimExtension } from "./VimExtension";
@@ -61,6 +62,8 @@ export function NotesPanel({
   const [copied, setCopied] = useState(false);
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const vimMode = useEditorStore((s) => s.vimMode);
+  const isNormalMode = useVimModeState((s) => s.isNormalMode);
+  const [isFocused, setIsFocused] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dragStartX = useRef<number | null>(null);
@@ -130,7 +133,11 @@ export function NotesPanel({
         }
       }, 800);
     },
+    onFocus: () => {
+      setIsFocused(true);
+    },
     onBlur: () => {
+      setIsFocused(false);
       useVimModeState.getState().setNormalMode(false);
     },
   }, [vimMode]);
@@ -172,7 +179,21 @@ export function NotesPanel({
         />
         {/* Header */}
         <div className="flex shrink-0 items-center justify-between border-b px-4 py-2">
-          <span className="text-xs font-medium text-muted-foreground">Notes</span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-muted-foreground">Notes</span>
+            {vimMode && isFocused && (
+              <span
+                className={cn(
+                  "rounded px-1.5 py-0.5 text-[10px] font-mono font-bold tracking-wider",
+                  isNormalMode
+                    ? "bg-amber-500/15 text-amber-600 dark:text-amber-400"
+                    : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
+                )}
+              >
+                {isNormalMode ? "NORMAL" : "INSERT"}
+              </span>
+            )}
+          </div>
           <div className="flex items-center gap-2">
             {saveState === "saving" && (
               <span className="text-[10px] text-muted-foreground/60">Saving…</span>
