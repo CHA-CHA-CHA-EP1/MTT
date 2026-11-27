@@ -161,13 +161,18 @@ pub async fn correct_transcript(
         match serde_json::from_str::<serde_json::Value>(json_str) {
             Ok(parsed) => {
                 if let Some(corrections) = parsed["corrections"].as_array() {
+                    let valid_ids: std::collections::HashSet<i64> =
+                        batch.iter().map(|s| s.id).collect();
+
                     let conn = state.db.get()?;
                     for item in corrections {
                         let id = item["id"].as_i64().unwrap_or(-1);
                         let corrected = item["corrected"].as_str().unwrap_or("");
-                        if id >= 0 && !corrected.is_empty() {
-                            queries::set_segment_text(&conn, id, Some(corrected.to_string())).ok();
-                            corrected_count += 1;
+                        if id >= 0 && !corrected.is_empty() && valid_ids.contains(&id) {
+                            match queries::set_segment_correction_guarded(&conn, id, &job_id, corrected) {
+                                Ok(n) if n > 0 => corrected_count += 1,
+                                _ => {} // blocked: user already edited this segment
+                            }
                         }
                     }
                 } else {

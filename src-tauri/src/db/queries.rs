@@ -471,6 +471,22 @@ pub fn set_segment_text(conn: &Connection, segment_id: i64, text: Option<String>
     Ok(())
 }
 
+/// Guarded write — only sets corrected_text when no prior correction exists.
+/// Used by the AI correction path to prevent overwriting user manual edits.
+/// Returns rows affected (0 = blocked).
+pub fn set_segment_correction_guarded(
+    conn: &Connection,
+    segment_id: i64,
+    job_id: &str,
+    text: &str,
+) -> Result<usize> {
+    let n = conn.execute(
+        "UPDATE segments SET corrected_text = ?1 WHERE id = ?2 AND job_id = ?3 AND corrected_text IS NULL",
+        params![text, segment_id, job_id],
+    )?;
+    Ok(n)
+}
+
 pub fn update_segment_correction(conn: &Connection, job_id: &str, start_idx: i64, texts: &[String]) -> Result<()> {
     for (offset, text) in texts.iter().enumerate() {
         let idx = start_idx + offset as i64;
@@ -833,5 +849,63 @@ mod tests {
         let segs = get_segments(&db, "job-1").unwrap();
         assert_eq!(segs.len(), 1);
         assert_eq!(segs[0].text, "สวัสดีครับ");
+    }
+
+    fn setup_segment() -> (Connection, i64) {
+        let db = setup();
+        insert_project(&db, &make_project("p-1")).unwrap();
+        insert_job(&db, &make_job("job-1", "p-1")).unwrap();
+        let seg = Segment {
+            id: 0,
+            job_id: "job-1".into(),
+            idx: 0,
+            start: 0.0,
+            end: 2.5,
+            text: "raw text".into(),
+            corrected_text: None,
+            suspect: false,
+        };
+        insert_segment(&db, &seg).unwrap();
+        let segs = get_segments(&db, "job-1").unwrap();
+        (db, segs[0].id)
+    }
+
+    #[test]
+    fn test_guarded_correction_writes_when_null() {
+        let (db, id) = setup_segment();
+        let n = set_segment_correction_guarded(&db, id, "job-1", "ai fixed").unwrap();
+        assert_eq!(n, 1);
+        let segs = get_segments(&db, "job-1").unwrap();
+        assert_eq!(segs[0].corrected_text.as_deref(), Some("ai fixed"));
+    }
+
+    #[test]
+    fn test_guarded_correction_blocked_by_manual_edit() {
+        let (db, id) = setup_segment();
+        set_segment_text(&db, id, Some("user edit".into())).unwrap();
+        let n = set_segment_correction_guarded(&db, id, "job-1", "ai fixed").unwrap();
+        assert_eq!(n, 0);
+        let segs = get_segments(&db, "job-1").unwrap();
+        assert_eq!(segs[0].corrected_text.as_deref(), Some("user edit"));
+    }
+
+    #[test]
+    fn test_guarded_correction_blocked_by_wrong_job_id() {
+        let (db, id) = setup_segment();
+        let n = set_segment_correction_guarded(&db, id, "job-other", "ai fixed").unwrap();
+        assert_eq!(n, 0);
+        let segs = get_segments(&db, "job-1").unwrap();
+        assert!(segs[0].corrected_text.is_none());
+    }
+
+    #[test]
+    fn test_guarded_correction_blocked_on_ai_rerun() {
+        let (db, id) = setup_segment();
+        let first = set_segment_correction_guarded(&db, id, "job-1", "ai fixed v1").unwrap();
+        assert_eq!(first, 1);
+        let second = set_segment_correction_guarded(&db, id, "job-1", "ai fixed v2").unwrap();
+        assert_eq!(second, 0);
+        let segs = get_segments(&db, "job-1").unwrap();
+        assert_eq!(segs[0].corrected_text.as_deref(), Some("ai fixed v1"));
     }
 }

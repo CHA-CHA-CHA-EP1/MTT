@@ -17,14 +17,11 @@ with _mlx_lock:
     result = mlx_whisper.transcribe(clip, ...)
 ```
 
-### B4.3 — AI correction ทับ manual edit ของ user
-**ไฟล์:** `src-tauri/src/db/queries.rs` (ฟังก์ชัน `update_segment_correction`)  
-`correct_transcript` async วิ่งอยู่ + user แก้ segment เอง → AI batch response เขียนทับ
-```sql
--- แก้: เพิ่ม WHERE condition
-UPDATE segments SET corrected_text = ?1 
-WHERE id = ?2 AND job_id = ?3 AND corrected_text IS NULL
-```
+### B4.3 — AI correction ทับ manual edit ของ user ✅ DONE (`fix/b43-guard-ai-correction`)
+**ไฟล์:** `src-tauri/src/db/queries.rs` (`set_segment_correction_guarded` ใหม่), `src-tauri/src/commands/correction.rs`
+ตัวที่ทับจริงคือ `correct_transcript` → `set_segment_text` (path เดียวกับ manual edit ของ user) — ไม่ใช่ `update_segment_correction` (dead code, Python corrector disabled)
+แก้: query ใหม่ guarded `WHERE id = ?2 AND job_id = ?3 AND corrected_text IS NULL` ใช้เฉพาะ AI path + validate id ∈ batch (`HashSet`) + นับ `corrected_count` จาก rows affected จริง; `set_segment_text` คงเดิมให้ user
+Trade-off: บล็อก AI re-run บน segment ที่เคยแก้แล้วด้วย (ดู QW13 สำหรับ provenance column)
 
 ### B4.2 — Race condition: startup recovery clobber new jobs
 **ไฟล์:** `src-tauri/src/db/queries.rs::reset_interrupted_jobs`  
@@ -122,6 +119,12 @@ await open("x-apple.systempreferences:com.apple.preference.security?Privacy_Scre
 ### QW12 — Error handling บน segment update
 **ไฟล์:** `src/modules/transcript/TranscriptPage.tsx::saveEdit`  
 `updateSegment()` throw ได้ แต่ไม่มี try/catch → edit box ปิดเงียบๆ ไม่มี toast
+
+### QW13 — Provenance column สำหรับ corrected_text (ต่อยอด B4.3)
+**ไฟล์:** `src-tauri/src/db/schema.rs`, `src-tauri/src/db/queries.rs`  
+ตอนนี้ `corrected_text` เก็บทั้ง AI และ manual ปนกัน — guard `IS NULL` ของ B4.3 บล็อก AI re-run บน segment ที่ AI เคยแก้เองด้วย  
+เพิ่ม `corrected_by TEXT` (`NULL` | `'ai'` | `'user'`) → guard เป็น `WHERE corrected_by IS NULL OR corrected_by = 'ai'` → AI re-correct ได้เฉพาะของตัวเอง, manual edit ยังถูกปกป้อง  
+ต้อง migration + set provenance ในทั้ง user path (`set_segment_text`) และ AI path
 
 ---
 
