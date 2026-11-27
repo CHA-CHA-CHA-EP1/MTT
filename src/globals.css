@@ -177,3 +177,13 @@ body {
   border-radius: 3px;
   padding: 0.05em 0.15em;
 }
+
+/* Vim mode caret colors — classes are toggled on view.dom (the same element
+   that carries .tiptap/.ProseMirror) by VimExtension.updateCursorClass() */
+.tiptap.vim-normal {
+  caret-color: #f59e0b; /* amber — NORMAL mode */
+}
+
+.tiptap.vim-insert {
+  caret-color: #10b981; /* emerald — INSERT mode */
+}
