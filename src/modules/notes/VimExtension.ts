@@ -13,7 +13,14 @@ type VimMode = "normal" | "insert";
 
 const vimPluginKey = new PluginKey<{ mode: VimMode }>("mtt-vim");
 
+// Goal column for consecutive j/k (and ArrowUp/ArrowDown) moves — vim
+// semantics: remember the column on the first move of a streak, clamp on
+// shorter lines, restore on longer ones. Reset on any other command, mode
+// change, mousedown, or blur.
+let goalCol: number | null = null;
+
 function setMode(view: EditorView, mode: VimMode) {
+  goalCol = null;
   const tr = view.state.tr.setMeta(vimPluginKey, { mode });
   view.dispatch(tr);
   useVimModeState.getState().setNormalMode(mode === "normal");
@@ -40,12 +47,25 @@ function moveCursor(view: EditorView, delta: number) {
 
 function moveLine(view: EditorView, dir: 1 | -1) {
   const { state } = view;
-  const coords = view.coordsAtPos(state.selection.from);
-  const targetY = dir > 0 ? coords.bottom + 4 : coords.top - 4;
-  const target = view.posAtCoords({ left: coords.left, top: targetY });
-  if (!target) return;
-  const resolved = state.doc.resolve(target.pos);
-  const tr = state.tr.setSelection(TextSelection.near(resolved));
+  const $pos = state.selection.$from;
+  // Capture goal column before dispatch — dispatch can trigger focus handlers.
+  if (goalCol === null) goalCol = $pos.parentOffset;
+
+  // Step past the current textblock's boundary and let TextSelection.near
+  // snap into the adjacent textblock. near() descends into wrappers
+  // (taskList > taskItem > paragraph) on its own, so this moves item-by-item
+  // inside lists instead of jumping over the whole top-level node.
+  const boundary = dir > 0 ? $pos.after($pos.depth) + 1 : $pos.before($pos.depth) - 1;
+  const clamped = Math.min(Math.max(boundary, 0), state.doc.content.size);
+  const $target = TextSelection.near(state.doc.resolve(clamped), dir).$from;
+  // No adjacent textblock in this direction (first/last block) → no-op.
+  if ($target.start() === $pos.start()) return;
+
+  // Map the goal column into the target textblock, clamping on shorter lines.
+  const offset = Math.min(goalCol, $target.parent.content.size);
+  const tr = state.tr.setSelection(
+    TextSelection.create(state.doc, $target.start() + offset),
+  );
   view.dispatch(tr);
 }
 
@@ -110,6 +130,11 @@ function openLineAbove(view: EditorView) {
 function handleNormalKey(view: EditorView, event: KeyboardEvent): boolean {
   if (event.ctrlKey || event.metaKey || event.altKey) return false;
   const key = event.key;
+  // Any handled command other than j/k/ArrowUp/ArrowDown ends the goal-column
+  // streak (arrow keys are aliases and must participate in the same streak).
+  if (key !== "j" && key !== "k" && key !== "ArrowUp" && key !== "ArrowDown") {
+    goalCol = null;
+  }
 
   // Mode exits
   if (key === "i") { setMode(view, "insert"); return true; }
@@ -217,10 +242,15 @@ export const VimExtension = Extension.create({
             return false;
           },
           handleDOMEvents: {
+            mousedown() {
+              goalCol = null;
+              return false;
+            },
             blur(view) {
               // On blur, treat the editor as back in insert mode so global
               // hotkeys (u, t, etc.) are not blocked while the editor isn't
               // focused.
+              goalCol = null;
               useVimModeState.getState().setNormalMode(false);
               const dom = view.dom as HTMLElement;
               dom.classList.remove("vim-normal", "vim-insert");
