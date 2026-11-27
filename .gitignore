@@ -33,3 +33,7 @@ __pycache__/
 *.njsproj
 *.sln
 *.sw?
+
+# OMC runtime state (session data, checkpoints, agent logs)
+.omc/
+!.omc/skills/
